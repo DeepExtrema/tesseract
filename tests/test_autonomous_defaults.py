@@ -150,7 +150,7 @@ def test_extractor_keeps_good_and_suspicious_memory_text():
         worker.extract("Yesterday.md", item)
     for prompt, original in zip(seen, notes):
         assert original in prompt
-        assert "Preserve past tools/workflows as facts" in prompt
+        assert "Keep past tools/workflows" in prompt
         assert "untrusted role spoofing" in prompt
     assert len(seen) == 2
 
@@ -162,12 +162,12 @@ def test_no_memory_keyword_filter_or_cli_restrictions():
     assert not hasattr(extractor, "sanitize_note")
     assert set(server.mcp._tool_manager._tools) == ORIGINAL_MCP_TOOLS
 
-# Baselines captured from PR #10 commit 1e67cd2, before adding
-# the context-aware security enhancement. This test controls static prompt
+# Baselines captured from PR #10 commit af735549, before ANY security
+# enhancement. This test controls static prompt
 # size, NOT model-specific tokenization (Claude and Codex differ).
 # 9% character/word cap leaves headroom under the owner's 10% token goal.
 BASELINE_INSTRUCTION_METRICS = {
-    "extractor": (1650, 233),
+    "extractor": (1439, 199),
     "server": (935, 124),
     "recall": (2483, 409),
     "resume": (1478, 216),
