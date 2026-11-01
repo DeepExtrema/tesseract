@@ -139,8 +139,8 @@ The CLI exits non-zero when any step failed, so a scheduler can alert on it.
 | **Semantic graph** | An LLM pass extracts people, organizations, domains, topics, projects and sources into entity notes under `Claude/Graph/`, mirrored into SQLite for traversal. `related_notes` explains every connection with its entity chain. |
 | **Write contract** | `vault.py` contains every path to the vault and quarantines writes to `Claude/`. Writing elsewhere requires `confirm_outside_claude=True`. The human-readable rules ship as a constitution note. |
 | **Structured sheets** | A human folder becomes agent-writable only when it holds a `_schema.md`. `sheet_upsert` validates every field against that schema. |
-| **Organizer** | Files new notes by embedding neighbor vote. A share of ≥ 0.7 moves the note; anything less becomes a proposal. Every move is journaled and reversible with `undo_move`. |
-| **Graph cleanup** | Retracts mentions of deleted notes, repairs dangling relations and merge-stub chains, and prunes caches. Retiring an entity is propose-only. |
+| **Organizer** | Files new notes by embedding neighbor vote. A share of ≥ 0.7 moves the note; below that, an unfiled note becomes a proposal for a human and an already-filed note stays put. Every move is journaled and reversible with `undo_move`. |
+| **Graph cleanup** | Retracts mentions of deleted notes, repairs dangling relations and merge-stub chains, and prunes caches. The Librarian only proposes entity retirements; `cleanup --apply-retirements` applies them. |
 | **Consolidation** | Finds duplicate entities with an LLM pass. Dry-run by default; the Librarian only ever proposes merges. |
 | **Recall harness** | Claude Code skills that turn the vault into memory you can question. See [Skills](#skills). |
 | **Provisioning** | One command installs a pinned set of 14 Obsidian plugins, seeds settings, and installs the `Claude/` conventions tree. `--check` reports drift. |
@@ -175,8 +175,9 @@ python -m venv .venv
 .venv\Scripts\pip install -e .
 ```
 
-Provision a vault (plugins, settings, conventions tree). It is idempotent and
-never overwrites existing files.
+Provision a vault (plugins, settings, conventions tree). It is idempotent:
+settings and conventions files are only written where none exist, and a
+plugin is only (re)installed when its version differs from the pin.
 
 ```powershell
 .venv\Scripts\python -m tesseract_mcp.provision <path-to-vault>
@@ -277,7 +278,9 @@ These run outside the MCP server and are never exposed as tools.
 | `python -m tesseract_mcp.librarian <vault> [--dry-run]` | The scheduled caretaker sweep |
 | `python -m tesseract_mcp.indexer <vault> [--rebuild-only]` | Index directly, or rebuild `graph.db` from the markdown |
 | `python -m tesseract_mcp.organize <vault> [--dry-run]` | Run only the filing sweep |
-| `python -m tesseract_mcp.cleanup <vault> [--apply-retirements]` | Graph cleanup; applies entity retirements on request |
+| `python -m tesseract_mcp.cleanup <vault> [--apply-retirements]` | Report deleted notes and orphaned entities; retire the orphans on request |
+| `python -m tesseract_mcp.consolidate <vault> [--apply]` | Propose duplicate-entity merges; apply them on request |
+| `python -m tesseract_mcp.sheets <vault> --check` | Validate every sheet row against its schema |
 | `python -m tesseract_mcp.provision <vault> [--check]` | Provision or check a vault |
 | `python -m tesseract_mcp.mcp_sync [--check]` | Register the MCP server set in Claude Code |
 | `python -m tesseract_mcp.skill_sync [--check]` | Install the skills into `~/.claude/skills` |
