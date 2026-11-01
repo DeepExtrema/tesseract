@@ -6,6 +6,10 @@ them, applies opinionated settings where the vault has none, and installs
 the Claude/ conventions tree. Operator CLI only — deliberately NOT an MCP
 tool.
 
+Every pin carries a SHA-256 lock for each release asset it ships. A plugin
+whose downloaded bytes do not match its lock is never written or enabled;
+the rest of the set still installs.
+
 All network access goes through an injectable fetch(url) -> bytes | None
 callable (the same injection pattern CliExtractor uses for subprocess.run),
 so tests never touch the network.
@@ -14,7 +18,9 @@ so tests never touch the network.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -30,11 +36,34 @@ class ProvisionError(Exception):
     """Raised when provisioning cannot proceed for a plugin or the vault."""
 
 
+REQUIRED_ASSETS = ("manifest.json", "main.js")
+OPTIONAL_ASSETS = ("styles.css",)
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+
+
 @dataclass
 class PluginSpec:
     id: str
     repo: str
     version: str
+    sha256: dict[str, str]
+
+
+def _validate_lock(entry: dict) -> dict[str, str]:
+    lock = entry.get("sha256")
+    if not isinstance(lock, dict):
+        raise ProvisionError(f"plugins.json entry missing 'sha256' lock: {entry}")
+    for name in REQUIRED_ASSETS:
+        if name not in lock:
+            raise ProvisionError(f"{entry['id']}: sha256 lock missing '{name}'")
+    for name, digest in lock.items():
+        if name not in REQUIRED_ASSETS + OPTIONAL_ASSETS:
+            raise ProvisionError(f"{entry['id']}: sha256 lock names unknown asset '{name}'")
+        if not isinstance(digest, str) or not _SHA256_HEX.fullmatch(digest):
+            raise ProvisionError(
+                f"{entry['id']}: sha256 for '{name}' is not 64 lowercase hex chars"
+            )
+    return lock
 
 
 def load_plugin_manifest(path: Path | None = None) -> list[PluginSpec]:
@@ -45,7 +74,9 @@ def load_plugin_manifest(path: Path | None = None) -> list[PluginSpec]:
         for field in ("id", "repo", "version"):
             if not entry.get(field):
                 raise ProvisionError(f"plugins.json entry missing '{field}': {entry}")
-        specs.append(PluginSpec(entry["id"], entry["repo"], entry["version"]))
+        specs.append(
+            PluginSpec(entry["id"], entry["repo"], entry["version"], _validate_lock(entry))
+        )
     return specs
 
 
@@ -82,31 +113,36 @@ def installed_version(vault_root: Path, plugin_id: str) -> str | None:
         return None
 
 
+def _fetch_verified(spec: PluginSpec, filename: str, fetch) -> bytes:
+    data = fetch(_asset_url(spec, filename))
+    if data is None:
+        raise ProvisionError(f"{spec.id}: no {filename} in release {spec.version} of {spec.repo}")
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != spec.sha256[filename]:
+        raise ProvisionError(
+            f"{spec.id}: {filename} sha256 {actual} does not match lock "
+            f"{spec.sha256[filename]} — refusing"
+        )
+    return data
+
+
 def install_plugin(vault_root: Path, spec: PluginSpec, fetch=http_fetch) -> str:
+    """Download, verify against the sha256 lock, then write. Nothing touches
+    the vault until every locked asset has downloaded and matched."""
     vault_root = Path(vault_root)
     if installed_version(vault_root, spec.id) == spec.version:
         return "ok"
-    manifest_bytes = fetch(_asset_url(spec, "manifest.json"))
-    if manifest_bytes is None:
-        raise ProvisionError(
-            f"{spec.id}: no manifest.json in release {spec.version} of {spec.repo}"
-        )
-    manifest = json.loads(manifest_bytes)
+    assets = {name: _fetch_verified(spec, name, fetch) for name in spec.sha256}
+    manifest = json.loads(assets["manifest.json"])
     if manifest.get("id") != spec.id:
         raise ProvisionError(
             f"{spec.id}: release manifest declares id '{manifest.get('id')}' — refusing"
         )
-    main_js = fetch(_asset_url(spec, "main.js"))
-    if main_js is None:
-        raise ProvisionError(f"{spec.id}: no main.js in release {spec.version}")
-    styles = fetch(_asset_url(spec, "styles.css"))  # optional; None is fine
 
     dest = vault_root / ".obsidian" / "plugins" / spec.id
     dest.mkdir(parents=True, exist_ok=True)
-    (dest / "manifest.json").write_bytes(manifest_bytes)
-    (dest / "main.js").write_bytes(main_js)
-    if styles is not None:
-        (dest / "styles.css").write_bytes(styles)
+    for name, data in assets.items():
+        (dest / name).write_bytes(data)
     return "installed"
 
 

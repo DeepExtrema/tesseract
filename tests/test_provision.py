@@ -1,8 +1,10 @@
+import hashlib
 import json
 import shutil
 
 import pytest
 
+import tesseract_mcp.provision as provision_mod
 from tesseract_mcp.provision import (
     PluginSpec,
     ProvisionError,
@@ -16,7 +18,6 @@ from tesseract_mcp.provision import (
     provision,
 )
 
-SPEC = PluginSpec("dataview", "blacksmithgu/obsidian-dataview", "0.5.68")
 BASE = "https://github.com/blacksmithgu/obsidian-dataview/releases/download/0.5.68"
 
 
@@ -32,6 +33,14 @@ def make_fetcher(assets: dict[str, bytes]):
     return fetch
 
 
+def lock_for(assets: dict[str, bytes]) -> dict[str, str]:
+    """sha256 lock keyed by asset filename for a url -> bytes asset dict."""
+    return {
+        url.rsplit("/", 1)[1]: hashlib.sha256(data).hexdigest()
+        for url, data in assets.items()
+    }
+
+
 def good_assets(plugin_id="dataview", version="0.5.68", base=BASE):
     manifest = json.dumps({"id": plugin_id, "version": version}).encode()
     return {
@@ -41,12 +50,24 @@ def good_assets(plugin_id="dataview", version="0.5.68", base=BASE):
     }
 
 
+SPEC = PluginSpec(
+    "dataview", "blacksmithgu/obsidian-dataview", "0.5.68", lock_for(good_assets())
+)
+
+
+def write_manifest(tmp_path, entries):
+    path = tmp_path / "plugins.json"
+    path.write_text(json.dumps(entries), encoding="utf-8")
+    return path
+
+
 def test_repo_manifest_loads_fourteen_pinned_plugins():
     specs = load_plugin_manifest()
     assert len(specs) == 14
     by_id = {s.id: s for s in specs}
     assert by_id["smart-connections"].repo == "brianpetro/obsidian-smart-connections"
     assert all(s.version for s in specs)
+    assert all({"manifest.json", "main.js"} <= s.sha256.keys() for s in specs)
 
 
 def test_smart_env_template_pins_the_adapter_model():
@@ -62,10 +83,33 @@ def test_smart_env_template_pins_the_adapter_model():
 
 
 def test_manifest_entry_missing_field_raises(tmp_path):
-    bad = tmp_path / "plugins.json"
-    bad.write_text(json.dumps([{"id": "x", "repo": "a/b"}]), encoding="utf-8")
+    bad = write_manifest(tmp_path, [{"id": "x", "repo": "a/b"}])
     with pytest.raises(ProvisionError, match="version"):
         load_plugin_manifest(bad)
+
+
+VALID_DIGEST = "ab" * 32
+
+
+@pytest.mark.parametrize(
+    ("lock", "match"),
+    [
+        (None, "sha256"),
+        ({"manifest.json": VALID_DIGEST}, "main.js"),
+        ({"manifest.json": VALID_DIGEST, "main.js": "ABC"}, "64 lowercase hex"),
+        ({"manifest.json": VALID_DIGEST, "main.js": VALID_DIGEST.upper()}, "64 lowercase hex"),
+        (
+            {"manifest.json": VALID_DIGEST, "main.js": VALID_DIGEST, "data.json": VALID_DIGEST},
+            "unknown asset",
+        ),
+    ],
+)
+def test_manifest_entry_with_incomplete_lock_raises(tmp_path, lock, match):
+    entry = {"id": "x", "repo": "a/b", "version": "1.0.0"}
+    if lock is not None:
+        entry["sha256"] = lock
+    with pytest.raises(ProvisionError, match=match):
+        load_plugin_manifest(write_manifest(tmp_path, [entry]))
 
 
 def test_install_plugin_writes_all_three_files(tmp_path):
@@ -86,19 +130,39 @@ def test_install_plugin_ok_when_already_at_pin(tmp_path):
     assert fetch2.calls == []  # no downloads when already pinned
 
 
-def test_install_plugin_missing_styles_is_fine(tmp_path):
+def test_install_plugin_skips_styles_absent_from_lock(tmp_path):
+    assets = good_assets()
+    lock = lock_for(assets)
+    del lock["styles.css"]
+    spec = PluginSpec(SPEC.id, SPEC.repo, SPEC.version, lock)
+    fetch = make_fetcher(assets)
+    assert install_plugin(tmp_path, spec, fetch) == "installed"
+    assert f"{BASE}/styles.css" not in fetch.calls
+    assert not (tmp_path / ".obsidian" / "plugins" / "dataview" / "styles.css").exists()
+
+
+@pytest.mark.parametrize("asset", ["manifest.json", "main.js", "styles.css"])
+def test_install_plugin_rejects_digest_mismatch_before_writing(tmp_path, asset):
+    assets = good_assets()
+    assets[f"{BASE}/{asset}"] += b" tampered"
+    with pytest.raises(ProvisionError, match=f"{asset} sha256 .* does not match lock"):
+        install_plugin(tmp_path, SPEC, make_fetcher(assets))
+    assert not (tmp_path / ".obsidian" / "plugins" / "dataview").exists()
+
+
+def test_install_plugin_missing_locked_styles_raises_before_writing(tmp_path):
     assets = good_assets()
     del assets[f"{BASE}/styles.css"]
-    fetch = make_fetcher(assets)
-    assert install_plugin(tmp_path, SPEC, fetch) == "installed"
-    assert not (tmp_path / ".obsidian" / "plugins" / "dataview" / "styles.css").exists()
+    with pytest.raises(ProvisionError, match="styles.css"):
+        install_plugin(tmp_path, SPEC, make_fetcher(assets))
+    assert not (tmp_path / ".obsidian" / "plugins" / "dataview").exists()
 
 
 def test_install_plugin_rejects_manifest_id_mismatch(tmp_path):
     assets = good_assets(plugin_id="evil-other-plugin")
-    fetch = make_fetcher(assets)
+    spec = PluginSpec(SPEC.id, SPEC.repo, SPEC.version, lock_for(assets))
     with pytest.raises(ProvisionError, match="evil-other-plugin"):
-        install_plugin(tmp_path, SPEC, fetch)
+        install_plugin(tmp_path, spec, make_fetcher(assets))
     assert not (tmp_path / ".obsidian" / "plugins" / "dataview").exists()
 
 
@@ -157,15 +221,35 @@ def test_apply_overlays_never_clobbers_existing(tmp_path):
     ) == {"user": "tweaked"}
 
 
+def plugin_assets(spec):
+    base = f"https://github.com/{spec.repo}/releases/download/{spec.version}"
+    return {
+        f"{base}/manifest.json": json.dumps({"id": spec.id, "version": spec.version}).encode(),
+        f"{base}/main.js": b"//js",
+        f"{base}/styles.css": b"/*css*/",
+    }
+
+
 def all_good_assets():
     assets = {}
     for spec in load_plugin_manifest():
-        base = f"https://github.com/{spec.repo}/releases/download/{spec.version}"
-        manifest = json.dumps({"id": spec.id, "version": spec.version}).encode()
-        assets[f"{base}/manifest.json"] = manifest
-        assets[f"{base}/main.js"] = b"//js"
-        assets[f"{base}/styles.css"] = b"/*css*/"
+        assets.update(plugin_assets(spec))
     return assets
+
+
+@pytest.fixture(autouse=True)
+def synthetic_locks(monkeypatch):
+    """The repo's 14 real pins, with locks matching the synthetic assets the
+    fake fetcher serves (the real locks only match the real release bytes)."""
+    real = provision_mod.load_plugin_manifest
+
+    def load(path=None):
+        return [
+            PluginSpec(s.id, s.repo, s.version, lock_for(plugin_assets(s)))
+            for s in real(path)
+        ]
+
+    monkeypatch.setattr(provision_mod, "load_plugin_manifest", load)
 
 
 def test_provision_fresh_vault_end_to_end(tmp_path):
@@ -209,6 +293,20 @@ def test_provision_isolates_one_bad_plugin(tmp_path):
         (tmp_path / ".obsidian" / "community-plugins.json").read_text(encoding="utf-8")
     )
     assert "dataview" not in enabled
+
+
+def test_provision_tampered_plugin_is_neither_written_nor_enabled(tmp_path):
+    assets = all_good_assets()
+    url = "https://github.com/pjeby/tag-wrangler/releases/download/0.6.4/main.js"
+    assets[url] = b"//js plus payload"
+    report = provision(tmp_path, make_fetcher(assets))
+    assert "does not match lock" in report["errors"]["tag-wrangler"]
+    assert not (tmp_path / ".obsidian" / "plugins" / "tag-wrangler").exists()
+    enabled = json.loads(
+        (tmp_path / ".obsidian" / "community-plugins.json").read_text(encoding="utf-8")
+    )
+    assert "tag-wrangler" not in enabled
+    assert len(enabled) == 13
 
 
 def test_provision_rejects_missing_vault(tmp_path):
