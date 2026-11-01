@@ -284,6 +284,8 @@ These run outside the MCP server and are never exposed as tools.
 | `python -m tesseract_mcp.hook_sync [--check \| --install]` | Install the SessionStart and Stop hooks |
 | `python -m tesseract_mcp.evals` | Run the retrieval benchmark |
 
+### Scheduled maintenance
+
 > **First Librarian run on a real vault: use `--dry-run`** and review the
 > report before scheduling unattended runs. Dry-run writes no state, moves,
 > report or throttle baselines. `scripts/librarian-task.cmd` is the Windows
