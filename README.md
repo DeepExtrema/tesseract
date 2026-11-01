@@ -199,18 +199,33 @@ syncs on one vault.
 
 ## Security notes
 
-- **Read-only mode.** Set `TESSERACT_READONLY=1` in the MCP server's environment
-  to unregister every tool that writes (search, read, graph lookups and
-  `librarian_status` remain). Useful when an agent must not touch the vault.
 - **Write scope.** The "agents write only under `Claude/`" rule is enforced by
   the MCP server's write tools. The operator CLIs (`provision`, `indexer`,
   `librarian`, `conventions`) also write elsewhere (`.obsidian/plugins`, vault-root
   `AGENTS.md`/`CLAUDE.md`, `.smart-env`, organizer moves). Review them before
   running against a vault you care about; always start with `--dry-run`.
-- **Untrusted content.** Note text is passed to the extractor CLI (`claude -p` /
-  `codex exec`) and results are written back as notes. Content ingested via
-  the `fetch` and `arxiv` servers is untrusted; don't grant the extractor
-  extra tool access.
+- **Untrusted content.** The extractor prompt tells Claude/Codex to treat
+  note contents (including \`fetch\` and \`arxiv\` imports) as data, not
+  instructions. No new CLI restrictions, tool approvals, or execution flags
+  are imposed; ordinary extraction and automation work as before. Prompt
+  guidance alone is not an OS-level security boundary.
+
+
+### Vault owner customization
+
+Provisioning still installs the curated 14 Obsidian plugins automatically,
+without extra opt-in flags. On a new vault, \`AGENTS.md\` and \`CLAUDE.md\`
+use neutral owner wording unless \`TESSERACT_OWNER\` is set (for example,
+\`TESSERACT_OWNER="Alex"\`). This is optional: the original defaults and
+existing user guides are preserved. The built-in default vault location
+(\`C:\Vaults\Tesseract\`) for the session hook and probe is also preserved
+and can still be overridden by \`TESSERACT_VAULT_PATH\` / \`--vault\`.
+
+### Tests
+
+The GitHub Actions workflow runs the full pytest suite on Windows, macOS,
+and Linux for every update to this pull request. CI adds no runtime prompts,
+approvals, restrictions, or scheduling changes.
 
 ## Scheduled maintenance
 
@@ -225,10 +240,11 @@ cache when needed, proposes consolidation merges (dry-run only), and writes
 a health report to `Claude/Librarian.md`. Use `librarian_status` to read
 the last sweep without running it.
 
-**First run against a real vault must use `--dry-run`** and be human-reviewed
-before scheduling unattended applies — same operational rule as the
-organizer. Dry-run prints the formatted report and JSON result without
-writing state, moves, or throttle baselines.
+**Automatic behavior is unchanged:** regular Librarian runs perform
+indexing, organization, cache/graph maintenance, and reporting. The
+macOS launchd and Windows Task Scheduler templates call the Librarian without
+extra approval flags. The existing \`--dry-run\` flag remains available for
+anyone who wants a preview, but is not a prerequisite for automatic runs.
 
 Model selection for the `claude` extractor backend (ignored by `codex`):
 
