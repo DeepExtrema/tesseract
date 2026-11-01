@@ -12,7 +12,7 @@ from .extractor import consolidation_extractor, extraction_extractor
 from .vault import Vault, VaultError
 
 INSTRUCTIONS = """Tesseract mind database: a shared Obsidian vault (markdown,
-LiveSync-synced) used as persistent memory by Taimoor and his AI agents.
+LiveSync-synced) used as persistent memory by its human owner and their AI agents.
 
 Orientation: call the `onboard` tool first in a new session. Read rules in
 Claude/README.md (the constitution) before writing.
@@ -383,7 +383,27 @@ def consolidate_graph(apply: bool = False) -> dict:
     return consolidate_mod.run(get_vault(), _make_consolidator(), apply=apply)
 
 
+# Tools that never write to the vault (the allow-list for read-only mode).
+READ_ONLY_TOOLS = frozenset({
+    "search_brain", "context_bundle", "read_note", "query_notes",
+    "get_backlinks", "list_recent", "list_tasks", "recall_bundle",
+    "sheet_query", "sheet_schema", "onboard", "find_entity",
+    "related_notes", "graph_stats", "librarian_status",
+})
+
+
+def apply_read_only() -> list[str]:
+    """Unregister every tool not on READ_ONLY_TOOLS. Returns removed names."""
+    tools = mcp._tool_manager._tools
+    removed = sorted(n for n in list(tools) if n not in READ_ONLY_TOOLS)
+    for name in removed:
+        del tools[name]
+    return removed
+
+
 def main() -> None:
+    if os.environ.get("TESSERACT_READONLY", "").lower() in ("1", "true", "yes"):
+        apply_read_only()
     _warm_start()
     mcp.run()
 

@@ -197,6 +197,21 @@ never overlap).
 the vault is already synced another way (e.g. iCloud Drive) — don't run two
 syncs on one vault.
 
+## Security notes
+
+- **Read-only mode.** Set `TESSERACT_READONLY=1` in the MCP server's environment
+  to unregister every tool that writes (search, read, graph lookups and
+  `librarian_status` remain). Useful when an agent must not touch the vault.
+- **Write scope.** The "agents write only under `Claude/`" rule is enforced by
+  the MCP server's write tools. The operator CLIs (`provision`, `indexer`,
+  `librarian`, `conventions`) also write elsewhere (`.obsidian/plugins`, vault-root
+  `AGENTS.md`/`CLAUDE.md`, `.smart-env`, organizer moves). Review them before
+  running against a vault you care about; always start with `--dry-run`.
+- **Untrusted content.** Note text is passed to the extractor CLI (`claude -p` /
+  `codex exec`) and results are written back as notes. Content ingested via
+  the `fetch` and `arxiv` servers is untrusted; don't grant the extractor
+  extra tool access.
+
 ## Scheduled maintenance
 
 The Librarian is the single scheduled task for vault upkeep:

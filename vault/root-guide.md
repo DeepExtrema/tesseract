@@ -1,6 +1,6 @@
 # Tesseract Vault — Agent Guide
 
-This vault is the shared mind database for Taimoor and his AI agents
+This vault is the shared mind database for the vault owner and their AI agents
 (Claude Code, Claudian, Codex, and future agents). Markdown is the source of
 truth; Self-hosted LiveSync replicates it across machines.
 
@@ -8,7 +8,7 @@ truth; Self-hosted LiveSync replicates it across machines.
 
 - The rules for HOW agents write here live in [[Claude/README]] — the
   constitution. Read it before writing anything.
-- Everything OUTSIDE `Claude/` belongs to Taimoor: read freely, write only
+- Everything OUTSIDE `Claude/` belongs to the vault owner: read freely, write only
   when explicitly asked.
 
 ## Routing rules — where things live
