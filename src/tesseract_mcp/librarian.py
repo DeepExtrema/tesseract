@@ -448,6 +448,7 @@ def run_sweep(
     consolidator=None,
     embedder=None,
     apply: bool = True,
+    max_moves: int | None = None,
     now: datetime | None = None,
 ) -> dict:
     now = now or datetime.now()
@@ -464,7 +465,8 @@ def run_sweep(
     if embedder is None:
         embedder = embeddings_mod.SentenceTransformerEmbedder()
     _step(result, "organize",
-          lambda: organizer_mod.run_sweep(vault, embedder, apply=apply))
+          lambda: organizer_mod.run_sweep(vault, embedder, apply=apply,
+                                          max_moves=max_moves))
 
     _step(result, "cache", lambda: _ensure_cache(vault, result))
 
@@ -504,8 +506,13 @@ def main() -> None:
     parser.add_argument("vault", help="Path to the Obsidian vault root")
     parser.add_argument("--dry-run", action="store_true",
                         help="Report without writing anything")
+    parser.add_argument("--max-moves", type=int, default=None, metavar="N",
+                        help="Cap organizer moves per sweep (default: unlimited)")
     args = parser.parse_args()
-    result = run_sweep(Vault(args.vault), apply=not args.dry_run)
+    if args.max_moves is not None and args.max_moves < 0:
+        parser.error("--max-moves must be >= 0")
+    result = run_sweep(Vault(args.vault), apply=not args.dry_run,
+                       max_moves=args.max_moves)
     if args.dry_run:
         print(format_report(result, datetime.now()))
     print(json.dumps(result, indent=2, default=str))

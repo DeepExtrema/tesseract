@@ -192,6 +192,17 @@ Model selection for the `claude` extractor backend (ignored by `codex`):
 | `TESSERACT_EXTRACT_MODEL` | `haiku` | Per-note entity extraction |
 | `TESSERACT_CONSOLIDATE_MODEL` | `sonnet` | Consolidation merge proposals |
 
+### Opt-in hardening
+
+Off by default. Leaving them unset keeps scheduled sweeps and the full tool
+set exactly as they are.
+
+| Knob | Effect |
+|---|---|
+| `librarian --max-moves N` | Caps organizer moves per sweep; confident moves past the cap are skipped and re-evaluated next sweep (`0` = file nothing) |
+| `TESSERACT_READONLY=1` | MCP server registers only read tools; `log_session`, `capture`, `upsert_concept`, `write_note`, `add_task`, `sheet_upsert`, `index_brain`, `consolidate_graph`, `organize_vault`, `undo_move` are absent |
+| `TESSERACT_EXTRACTOR_NO_TOOLS=1` | Extractor CLI runs with no tools (`claude --tools ""`, `codex exec --sandbox read-only`), so instructions inside note text cannot act during extraction |
+
 ## Going deeper
 
 - [Architecture deep dive](docs/ARCHITECTURE.md) — retrieval pipeline,

@@ -200,7 +200,7 @@ def test_pipeline_runs_index_before_organize(vault, monkeypatch):
     monkeypatch.setattr(librarian.indexer, "run",
                         lambda v, e, **k: (calls.append("index"), _counts())[1])
     monkeypatch.setattr(librarian.organizer_mod, "run_sweep",
-                        lambda v, emb, apply: (calls.append("organize"),
+                        lambda v, emb, apply, **k: (calls.append("organize"),
                                                _org_report())[1])
     librarian.run_sweep(vault, extractor=FakeExtractor(),
                         consolidator=FakeConsolidator(),
@@ -226,7 +226,7 @@ def test_drain_index_raises_when_rounds_exhausted(vault, monkeypatch):
 
 
 def test_step_failure_is_isolated(vault, monkeypatch):
-    def boom(v, emb, apply):
+    def boom(v, emb, apply, **k):
         raise RuntimeError("organize kaput")
 
     monkeypatch.setattr(librarian.organizer_mod, "run_sweep", boom)

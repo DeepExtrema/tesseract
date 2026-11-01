@@ -86,6 +86,24 @@ def test_extract_claude_backend_command():
     assert runner.calls[0][:2] == ["claude", "-p"]
 
 
+@pytest.mark.parametrize("backend, isolation", [
+    ("claude", ["--tools", ""]),
+    ("codex", ["--sandbox", "read-only"]),
+])
+def test_no_tools_env_denies_cli_tools(backend, isolation, monkeypatch):
+    def cmd():
+        runner = make_runner([FakeProc(stdout=json.dumps(GOOD))])
+        CliExtractor(backend=backend, runner=runner, which=lambda n: n).extract("N.md", "c")
+        return runner.calls[0]
+
+    monkeypatch.delenv("TESSERACT_EXTRACTOR_NO_TOOLS", raising=False)
+    assert not set(isolation[:1]) & set(cmd())  # default command unchanged
+    monkeypatch.setenv("TESSERACT_EXTRACTOR_NO_TOOLS", "1")
+    got = cmd()
+    i = got.index(isolation[0])
+    assert got[i:i + 2] == isolation
+
+
 def test_extract_parses_json_with_surrounding_prose():
     out = "Sure! Here is the JSON:\n" + json.dumps(GOOD) + "\nHope that helps."
     runner = make_runner([FakeProc(stdout=out)])

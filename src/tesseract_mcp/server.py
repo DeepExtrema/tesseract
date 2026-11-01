@@ -28,7 +28,22 @@ assuming something is unknown; log_session at the end of significant work;
 capture for stray thoughts; add_task for follow-ups; upsert_concept to grow
 evergreen knowledge (search first, extend rather than duplicate)."""
 
+# opt-in profile for agents that must not mutate the vault: tools that write
+# notes, move files, or rewrite the graph are never registered
+READONLY = os.environ.get("TESSERACT_READONLY", "").strip().lower() in {"1", "true", "yes", "on"}
+if READONLY:
+    INSTRUCTIONS += """
+
+Read-only profile (TESSERACT_READONLY): write, index, organize, undo and
+consolidate tools are not available in this session."""
+
 mcp = FastMCP("tesseract", instructions=INSTRUCTIONS)
+
+
+def _write_tool(fn):
+    """Register a vault-mutating tool unless the read-only profile is on."""
+    return fn if READONLY else mcp.tool()(fn)
+
 
 _vault: Vault | None = None
 _embedder = None
@@ -118,7 +133,7 @@ def context_bundle(query: str, hops: int = 2, limit: int = 10) -> dict:
     return {"hits": result_hits, "entities": entities, "related_notes": related}
 
 
-@mcp.tool()
+@_write_tool
 def organize_vault(apply: bool = False) -> dict:
     """Neighbor-vote sweep of the vault's topical folders. Dry-run by
     default: returns {moved, proposals, skipped} without touching files.
@@ -158,7 +173,7 @@ def recall_bundle(
     raise VaultError(f"mode must be 'digest' or 'resume', got {mode!r}")
 
 
-@mcp.tool()
+@_write_tool
 def sheet_upsert(
     sheet: str, fields: dict, body: str | None = None, agent: str = "claude"
 ) -> dict:
@@ -188,7 +203,7 @@ def sheet_schema(sheet: str | None = None) -> dict:
     return sheets_mod.schema_info(get_vault(), sheet)
 
 
-@mcp.tool()
+@_write_tool
 def undo_move(path: str) -> dict:
     """Reverse the organizer's most recent move of the given note (current
     vault-relative path). Restores the file, its inbound links, and the
@@ -202,7 +217,7 @@ def read_note(path: str) -> str:
     return get_vault().read(path)
 
 
-@mcp.tool()
+@_write_tool
 def log_session(
     title: str, content: str, project: str, tags: list[str] | None = None
 ) -> str:
@@ -213,19 +228,19 @@ def log_session(
     )
 
 
-@mcp.tool()
+@_write_tool
 def capture(content: str) -> str:
     """Append a quick timestamped thought to today's Claude/Inbox/ note."""
     return notes.capture(get_vault(), content)
 
 
-@mcp.tool()
+@_write_tool
 def upsert_concept(name: str, content: str) -> str:
     """Create or extend an evergreen concept note in Claude/Concepts/."""
     return notes.upsert_concept(get_vault(), name, content)
 
 
-@mcp.tool()
+@_write_tool
 def write_note(
     path: str,
     content: str,
@@ -245,7 +260,7 @@ def write_note(
     return path
 
 
-@mcp.tool()
+@_write_tool
 def add_task(content: str, due: str | None = None) -> str:
     """Add a checkbox task to Claude/Tasks.md in Obsidian Tasks-plugin format.
     Optional due date as YYYY-MM-DD."""
@@ -346,7 +361,7 @@ def _graph_db():
     return db
 
 
-@mcp.tool()
+@_write_tool
 def index_brain(force: bool = False) -> dict:
     """Index new/changed vault notes into the semantic graph (LLM entity
     extraction via the configured CLI backend). Returns counts including
@@ -375,7 +390,7 @@ def graph_stats() -> dict:
     return cache_mod.stats(_graph_db())
 
 
-@mcp.tool()
+@_write_tool
 def consolidate_graph(apply: bool = False) -> dict:
     """Find duplicate graph entities (name variants of the same thing) via an
     LLM pass. Dry-run by default — returns proposed merges for review; call
