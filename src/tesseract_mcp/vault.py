@@ -107,10 +107,9 @@ class Vault:
         if path.is_dir():
             raise VaultError(f"'{relative}' is a directory, not a note.")
         path.parent.mkdir(parents=True, exist_ok=True)
-
-        def _do_append():
-            with path.open("a", encoding="utf-8", newline="\n") as f:
-                f.write(content)
-
-        _retry_locked(_do_append)
+        # retry only the open: Windows locks surface there, and re-running a
+        # write that failed midway would append the content twice
+        f = _retry_locked(lambda: path.open("a", encoding="utf-8", newline="\n"))
+        with f:
+            f.write(content)
         return path

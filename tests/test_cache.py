@@ -140,3 +140,9 @@ def test_related_notes_limit_caps_hub_flood(hub, vault):
     got = cache.related_notes(hub, vault, "Claude/Inbox/seed.md", hops=2, limit=3)
     assert len(got) == 3
     assert got[0]["path"] == "Projects/Direct.md"  # strongest survives the cap
+
+
+def test_related_notes_rejects_negative_limit(hub, vault):
+    # a negative slice would silently return all-but-N instead of a cap
+    with pytest.raises(ValueError, match="limit"):
+        cache.related_notes(hub, vault, "Claude/Inbox/seed.md", limit=-1)

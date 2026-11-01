@@ -158,6 +158,8 @@ def related_notes(
     so notes tied by direct shared entities beat distant chains, and notes
     sharing several entities beat single-link ones. A hub entity two hops
     out can no longer flood the result — the cap keeps the K strongest."""
+    if limit < 0:
+        raise ValueError(f"limit must be >= 0, got {limit}")
     con = _connect(db_path)
     # normalize once: entity_path/mentions.note_path are stored without .md
     lookup = path[:-3] if path.endswith(".md") else path

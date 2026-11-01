@@ -117,3 +117,20 @@ def test_load_vector_cache_mutation_does_not_leak_into_memo(tmp_path):
     loaded["b"] = {"hash": "h2", "vec": [2.0]}
     del loaded["a"]
     assert load_vector_cache(p) == {"a": {"hash": "h1", "vec": [1.0]}}
+
+
+def test_save_vector_cache_failed_replace_keeps_old_file_and_no_temp(tmp_path, monkeypatch):
+    import pytest
+    from tesseract_mcp import embeddings as emb
+
+    p = tmp_path / "vecs.json"
+    emb.save_vector_cache(p, {"a": {"hash": "h1", "vec": [1.0]}})
+
+    def locked(src, dst):
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(emb.os, "replace", locked)
+    with pytest.raises(PermissionError):
+        emb.save_vector_cache(p, {"b": {"hash": "h2", "vec": [2.0]}})
+    assert [f.name for f in tmp_path.iterdir()] == ["vecs.json"]
+    assert emb.load_vector_cache(p) == {"a": {"hash": "h1", "vec": [1.0]}}

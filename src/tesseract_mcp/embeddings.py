@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Protocol
 
@@ -73,12 +74,18 @@ def load_vector_cache(path: Path) -> dict[str, dict]:
 
 
 def save_vector_cache(path: Path, cache: dict[str, dict]) -> None:
-    # temp file + atomic replace: an interrupted write must never leave a
-    # truncated cache that would fail every later load.
+    # unique temp file + atomic replace: an interrupted write must never
+    # leave a truncated cache, and the server, indexer and librarian may
+    # save the same cache concurrently from separate processes.
     path = Path(path)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(cache), encoding="utf-8")
-    os.replace(tmp, path)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(cache))
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
     stat = path.stat()
     _parsed_caches[str(path)] = ((stat.st_mtime_ns, stat.st_size), dict(cache))
 

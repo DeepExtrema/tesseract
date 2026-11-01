@@ -200,3 +200,41 @@ def test_append_gives_up_after_persistent_lock(vault, vault_dir, monkeypatch):
     monkeypatch.setattr(vault_mod.time, "sleep", lambda s: None)
     with _pytest.raises(PermissionError):
         vault.append("Claude/Inbox/lock-append2.md", "- captured\n")
+
+
+def test_append_does_not_retry_after_write_started(vault, vault_dir, monkeypatch):
+    # a failure mid-write must surface, not re-open and append the content
+    # a second time on top of what already landed
+    import pytest as _pytest
+    from tesseract_mcp import vault as vault_mod
+    target = vault_dir / "Claude" / "Inbox" / "partial-append.md"
+    real_open = type(target).open
+
+    class PartialWrite:
+        def __init__(self, f):
+            self._f = f
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self._f.close()
+
+        def close(self):
+            self._f.close()
+
+        def write(self, s):
+            self._f.write(s[: len(s) // 2])
+            self._f.flush()
+            raise PermissionError(5, "Access is denied")
+
+    def opener(self, *args, **kwargs):
+        f = real_open(self, *args, **kwargs)
+        return PartialWrite(f) if self == target else f
+
+    monkeypatch.setattr(type(target), "open", opener)
+    monkeypatch.setattr(vault_mod.time, "sleep", lambda s: None)
+    with _pytest.raises(PermissionError):
+        vault.append("Claude/Inbox/partial-append.md", "- captured\n")
+    monkeypatch.undo()
+    assert target.read_text(encoding="utf-8") == "- cap"
