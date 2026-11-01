@@ -182,7 +182,18 @@ export TESSERACT_VAULT_PATH="<path-to-vault>"
 ```
 
 For scheduled librarian sweeps on macOS use launchd instead of Task Scheduler:
-see `scripts/com.tesseract.librarian.plist.template`. LiveSync is optional if
+see `scripts/com.tesseract.librarian.plist.template`. To keep the graph fresh
+without any file moves, `scripts/com.tesseract.index.plist.template` runs
+`scripts/index-nightly.sh` (incremental `indexer` only, with a lock so runs
+never overlap).
+
+> **macOS privacy (TCC):** a launchd job cannot read a vault under iCloud Drive
+> (`~/Library/Mobile Documents/...`) or other protected folders unless the
+> interpreter that launchd starts (`/bin/bash` or the venv `python`) has
+> *Full Disk Access* (System Settings -> Privacy & Security). Without it the
+> job exits with `cannot read vault`. Grant it deliberately, or keep the vault
+> outside protected folders, or trigger sweeps from an app that already has
+> access. LiveSync is optional if
 the vault is already synced another way (e.g. iCloud Drive) — don't run two
 syncs on one vault.
 
