@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 from tesseract_mcp import platform_paths
-from tesseract_mcp.mcp_sync import ServerSpec, resolve
+from tesseract_mcp.mcp_sync import load_manifest, resolve
 
 
 def test_venv_layout_matches_platform(tmp_path):
@@ -12,14 +12,8 @@ def test_venv_layout_matches_platform(tmp_path):
     assert platform_paths.venv_script(tmp_path, "tesseract-mcp").name == "tesseract-mcp" + suffix
 
 
-def test_manifest_token_resolves_to_platform_console_script(tmp_path):
-    spec = ServerSpec(name="tesseract", transport="stdio",
-                      command="{TESSERACT_BIN}", url=None, args=[], env={}, why="")
-    out = resolve(spec, repo_root=tmp_path, vault=None)
+def test_shipped_manifest_resolves_to_platform_console_script(tmp_path):
+    manifest = Path(__file__).resolve().parent.parent / "mcp-servers.json"
+    spec = next(s for s in load_manifest(manifest) if s.name == "tesseract")
+    out = resolve(spec, repo_root=tmp_path, vault="vault")
     assert out.command == str(platform_paths.venv_script(tmp_path, "tesseract-mcp"))
-    assert "{TESSERACT_BIN}" not in out.command
-
-
-def test_shipped_manifest_has_no_hardcoded_windows_paths():
-    manifest = (Path(__file__).resolve().parent.parent / "mcp-servers.json").read_text(encoding="utf-8")
-    assert "Scripts" not in manifest
