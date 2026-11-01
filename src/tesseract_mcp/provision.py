@@ -199,9 +199,9 @@ def provision(vault_root: str | Path, fetch=http_fetch) -> dict:
     vault_root = Path(vault_root)
     if not vault_root.is_dir():
         raise ProvisionError(f"Vault root does not exist: {vault_root}")
+    specs = load_plugin_manifest()
     (vault_root / ".obsidian").mkdir(exist_ok=True)
 
-    specs = load_plugin_manifest()
     plugins: dict[str, str] = {}
     errors: dict[str, str] = {}
     for spec in specs:

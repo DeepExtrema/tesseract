@@ -67,7 +67,9 @@ organizer cron jobs. Sweep reports land in `Claude/Librarian.md`; the
 ### One-command vault provisioning
 `python -m tesseract_mcp.provision <path-to-vault>` installs a pinned plugin
 set, seeds settings (embed model pinned to what the search stack reads), and
-installs the agent conventions tree. `--check` reports version drift.
+installs the agent conventions tree. `--check` reports version drift. Every
+plugin asset is checked against a reviewed SHA-256 lock before anything is
+written; to bump a pin, see [docs/PLUGIN_LOCK.md](docs/PLUGIN_LOCK.md).
 
 ### The recall harness
 Claude Code skills turn the vault into a memory you can question:
