@@ -90,3 +90,32 @@ def test_extractor_keeps_original_cli_capabilities():
         assert cmd == expected
         assert "cwd" not in kwargs
     assert "untrusted" in extractor.PROMPT_TEMPLATE
+
+
+ORIGINAL_MCP_TOOLS = {
+    "search_brain", "context_bundle", "organize_vault", "librarian_status",
+    "recall_bundle", "sheet_upsert", "sheet_query", "sheet_schema",
+    "undo_move", "read_note", "log_session", "capture", "upsert_concept",
+    "write_note", "add_task", "list_tasks", "query_notes", "get_backlinks",
+    "list_recent", "onboard", "index_brain", "find_entity", "related_notes",
+    "graph_stats", "consolidate_graph",
+}
+
+
+def test_all_25_original_mcp_tools_remain_available():
+    from tesseract_mcp import server
+    actual = set(server.mcp._tool_manager._tools)
+    assert actual == ORIGINAL_MCP_TOOLS
+
+
+def test_original_mcp_tools_are_never_removed_by_readonly_environment(monkeypatch):
+    from tesseract_mcp import server
+    before = set(server.mcp._tool_manager._tools)
+    monkeypatch.setenv("TESSERACT_READONLY", "1")
+    calls = []
+    monkeypatch.setattr(server, "_warm_start", lambda: calls.append("warm"))
+    monkeypatch.setattr(server.mcp, "run", lambda: calls.append("run"))
+    server.main()
+    assert calls == ["warm", "run"]
+    assert set(server.mcp._tool_manager._tools) == before
+    assert {"write_note", "log_session", "index_brain", "organize_vault"} <= before
