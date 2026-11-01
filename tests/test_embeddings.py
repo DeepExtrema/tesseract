@@ -104,3 +104,16 @@ def test_load_vector_cache_corrupt_returns_empty(tmp_path):
     p = tmp_path / "vecs.json"
     p.write_text("{ truncated", encoding="utf-8")
     assert load_vector_cache(p) == {}
+
+
+def test_load_vector_cache_mutation_does_not_leak_into_memo(tmp_path):
+    from tesseract_mcp.embeddings import load_vector_cache, save_vector_cache
+
+    p = tmp_path / "vecs.json"
+    save_vector_cache(p, {"a": {"hash": "h1", "vec": [1.0]}})
+    # callers mutate the loaded dict before saving; if that save never lands
+    # (crash, locked file), the next load must still reflect what's on disk
+    loaded = load_vector_cache(p)
+    loaded["b"] = {"hash": "h2", "vec": [2.0]}
+    del loaded["a"]
+    assert load_vector_cache(p) == {"a": {"hash": "h1", "vec": [1.0]}}

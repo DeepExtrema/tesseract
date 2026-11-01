@@ -52,7 +52,9 @@ _parsed_caches: dict[str, tuple[tuple[int, int], dict]] = {}
 
 
 def load_vector_cache(path: Path) -> dict[str, dict]:
-    """JSON vector cache keyed by path: {key: {"hash": ..., "vec": [...]}}."""
+    """JSON vector cache keyed by path: {key: {"hash": ..., "vec": [...]}}.
+    Returns a fresh top-level dict: callers mutate it before saving, and an
+    unsaved mutation must not leak into the memo."""
     path = Path(path)
     try:
         stat = path.stat()
@@ -61,13 +63,13 @@ def load_vector_cache(path: Path) -> dict[str, dict]:
     stamp = (stat.st_mtime_ns, stat.st_size)
     memo = _parsed_caches.get(str(path))
     if memo and memo[0] == stamp:
-        return memo[1]
+        return dict(memo[1])
     try:
         cache = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}  # corrupt/truncated cache self-heals: treat as empty and rewrite
     _parsed_caches[str(path)] = (stamp, cache)
-    return cache
+    return dict(cache)
 
 
 def save_vector_cache(path: Path, cache: dict[str, dict]) -> None:
@@ -78,7 +80,7 @@ def save_vector_cache(path: Path, cache: dict[str, dict]) -> None:
     tmp.write_text(json.dumps(cache), encoding="utf-8")
     os.replace(tmp, path)
     stat = path.stat()
-    _parsed_caches[str(path)] = ((stat.st_mtime_ns, stat.st_size), cache)
+    _parsed_caches[str(path)] = ((stat.st_mtime_ns, stat.st_size), dict(cache))
 
 
 def _content_hash(text: str) -> str:
