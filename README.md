@@ -1,91 +1,104 @@
-# tesseract-mcp
+<div align="center">
 
-**A persistent, shared mind for AI agents, built on an Obsidian vault.**
+# Tesseract
 
-Every Claude session — on any machine — reads from and writes to the same
-knowledge base: a plain-markdown Obsidian vault replicated by Self-hosted
-LiveSync (CouchDB). This MCP server is how agents search it, extend it, and
-keep it organized.
+**Persistent, shared memory for AI agents, living in a plain-markdown Obsidian vault.**
+
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![MCP server](https://img.shields.io/badge/MCP-FastMCP%20server-6E56CF)](https://modelcontextprotocol.io)
+[![Obsidian](https://img.shields.io/badge/Obsidian-vault-7C3AED?logo=obsidian&logoColor=white)](https://obsidian.md)
+[![25 tools](https://img.shields.io/badge/tools-25-0EA5E9)](#tool-reference)
+[![Retrieval MRR 0.86](https://img.shields.io/badge/retrieval%20MRR-0.86-22C55E)](evals/README.md)
 
 ![The vault's semantic graph in Obsidian](docs/assets/hero-graph.png)
 
-## How it works
+</div>
+
+Every agent session, on any machine, reads from and writes to the same
+knowledge base. `tesseract-mcp` is the MCP server that lets agents search it,
+extend it, and keep it organized, while the vault's markdown stays the single
+source of truth.
+
+- **Hybrid retrieval.** BM25 and embedding similarity fused with Reciprocal Rank Fusion.
+- **A knowledge graph you can open.** Entities extracted by an LLM are written as real markdown notes under `Claude/Graph/`.
+- **A write contract enforced in code.** Agents write freely under `Claude/`; everything else needs explicit confirmation.
+- **Self-maintaining.** One scheduled Librarian sweep indexes, files, repairs and reports.
+- **Rebuildable state.** Every cache lives under `~/.tesseract-mcp/` and can be deleted and rebuilt from the vault.
+
+## Contents
+
+[Architecture](#architecture) · [Features](#features) · [Quickstart](#quickstart) ·
+[Client configuration](#mcp-client-configuration) · [Tool reference](#tool-reference) ·
+[Configuration](#configuration) · [Operator CLIs](#operator-clis) ·
+[Retrieval quality](#retrieval-quality) · [Contributing](#contributing) · [License](#license)
+
+## Architecture
+
+The system is drawn on five trust bands. Arrows point from the caller to what
+it depends on.
 
 ```mermaid
-flowchart LR
-    subgraph Agent side
-        C[Claude or any MCP client]
+flowchart TB
+    subgraph OUT["Outside world"]
+        direction LR
+        CL["MCP clients<br/>Claude Code · Claude Desktop · Codex"]
+        ING["Ingest servers<br/>fetch · arxiv<br/>(untrusted content)"]
+        SYNC["Other machines<br/>Obsidian + LiveSync"]
     end
-    C <-->|MCP tools| S[tesseract-mcp server]
-    S <-->|read/write markdown| V[(Obsidian vault)]
-    S <-->|rebuildable caches| Q[(SQLite + embeddings in ~/.tesseract-mcp/)]
-    L[Librarian + organizer<br/>scheduled caretakers] -->|index, file, heal| V
-    L --> Q
-    V <-->|LiveSync| DB[(CouchDB)]
-    DB <-->|LiveSync| M2[Vault on other machines]
+
+    subgraph MODEL["Model boundary"]
+        direction LR
+        EXT["Extractor CLI<br/>claude -p · codex exec"]
+        EMB["Embeddings<br/>Smart Connections vectors<br/>bge-micro-v2 fallback"]
+    end
+
+    subgraph CORE["Deterministic core · tesseract-mcp"]
+        direction LR
+        SRV["FastMCP server<br/>25 tools"]
+        HYB["Hybrid search<br/>BM25 + cosine → RRF"]
+        GRAPH["Graph store<br/>+ SQLite cache"]
+        ORG["Organizer<br/>neighbor-vote filing"]
+        LIB["Librarian<br/>scheduled sweep"]
+        VLT["vault.py<br/>path containment +<br/>Claude/ write quarantine"]
+    end
+
+    subgraph TRUTH["Ground truth"]
+        direction LR
+        MD[("Obsidian vault<br/>markdown notes")]
+        GN[("Claude/Graph/<br/>entity notes")]
+        DB[("CouchDB<br/>LiveSync replica")]
+    end
+
+    subgraph HUMAN["Human interlocks"]
+        direction LR
+        DRY["Dry-run defaults<br/>organize · consolidate"]
+        CONF["confirm_outside_claude"]
+        SCH["_schema.md<br/>blesses a sheet folder"]
+        UNDO["undo_move · retirement<br/>proposals · --dry-run"]
+    end
+
+    CL -->|MCP stdio| SRV
+    ING -.->|clipped into notes| SRV
+    SRV --> HYB & GRAPH & ORG & VLT
+    LIB --> GRAPH & ORG
+    HYB --> EMB
+    GRAPH --> EXT
+    ORG --> EMB
+    VLT --> MD
+    GRAPH --> GN
+    MD <-->|LiveSync| DB
+    DB <-->|LiveSync| SYNC
+    VLT -.-> CONF & SCH
+    ORG -.-> DRY & UNDO
+    GRAPH -.-> DRY
 ```
 
-The vault's markdown is the single source of truth. Everything the server
-computes — the search index, embeddings, the graph cache — lives under
-`~/.tesseract-mcp/` and is rebuildable from the vault on demand, so it never
-has to travel through LiveSync itself.
+Markdown is authoritative. The search index is rebuilt per query, and the
+embedding cache and `graph.db` mirror live in a per-vault state directory, so
+only the vault itself ever travels through LiveSync. Full detail:
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## What's inside
-
-### Hybrid search
-BM25 keyword ranking and embedding cosine similarity, fused with Reciprocal
-Rank Fusion — rank-based fusion means the two score spaces never need to be
-normalized against each other. Vectors reuse Obsidian's Smart Connections
-embeddings when fresh, with a same-model local fallback (bge-micro-v2) so the
-similarity space is never mixed.
-
-### A semantic knowledge graph (GraphRAG)
-An LLM pass extracts people, organizations, domains, topics, projects and
-sources from notes into real markdown entity notes under `Claude/Graph/` —
-visible in Obsidian's graph, synced like everything else, and mirrored into
-SQLite for traversal. `related_notes` walks entity chains between notes;
-`context_bundle` composes hybrid search and graph context in one call.
-
-### A write contract agents can't break
-Agents write freely only under `Claude/` (sessions, concepts, inbox, tasks,
-decisions, graph). Everything else is the human's: readable always, writable
-only with explicit confirmation — enforced in code, not by convention. The
-human-readable rules live in the vault as a constitution.
-
-### An autonomous organizer
-New notes are filed into the existing folder taxonomy by embedding
-neighbor-vote (≥0.7 agreement moves the note; less queues a human proposal).
-Every move is journaled and reversible.
-
-### The Librarian
-A single scheduled caretaker loop (`python -m tesseract_mcp.librarian <vault>`)
-runs indexing, organizing, cache maintenance, throttled consolidation
-proposals, and health checks in one pass — replacing separate indexer and
-organizer cron jobs. Sweep reports land in `Claude/Librarian.md`; the
-`librarian_status` MCP tool reads the last run.
-
-### One-command vault provisioning
-`python -m tesseract_mcp.provision <path-to-vault>` installs a pinned plugin
-set, seeds settings (embed model pinned to what the search stack reads), and
-installs the agent conventions tree. `--check` reports version drift.
-
-### The recall harness
-Claude Code skills turn the vault into a memory you can question:
-`/recall` (researched answers, every claim cited as a `[[wikilink]]`),
-`/digest` (the review ritual), `/resume` (project briefings), and
-`/connections` (graph serendipity). `/recall` files every answer into
-`Claude/Answers/`, where the Librarian indexes it like any note — so
-answers become retrieval sources and the vault compounds from asking
-questions, not just ingesting. Five further rituals are drafted and
-awaiting their acceptance runs: `/clip` (compile one external source
-into a cited Inbox note), `/distill` (promote repeated captures into
-evergreen concepts), `/decide` (the append-only decision ledger),
-`/rounds` (read-only caretaker health inspection), and `/dossier`
-(deep multi-section briefings). Skills live in [`skills/`](skills/) and
-install with `python -m tesseract_mcp.skill_sync` (additive; `--check`
-reports drift; existing skills are never modified without `--force`).
-
-## How retrieval works
+### Retrieval pipeline
 
 ```mermaid
 flowchart LR
@@ -99,101 +112,239 @@ flowchart LR
     R --> H[ranked hits with excerpts]
 ```
 
-Every query runs both rankers over the filtered candidate set, and RRF merges
-them by rank position — so BM25 scores and cosine similarities never need to
-be normalized against each other. The substring ranker is a fallback signal
-for queries BM25's tokenizer can't match (single characters, punctuation),
-never a third competitor. Full detail in
-[ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Fusion works on rank position, so BM25 scores and cosine similarities never
+need normalizing against each other. The substring ranker only fires for
+queries the tokenizer can't match, such as single characters or punctuation.
 
-## Measured retrieval quality
+### The Librarian sweep
 
-| success@5 | success@10 | recall@5 | recall@10 | MRR |
-|---|---|---|---|---|
-| 0.88 | 0.94 | 0.88 | 0.94 | 0.89 |
+```mermaid
+flowchart LR
+    I[index<br/>drain changed notes] --> O[organize<br/>file new notes]
+    O --> C[cache<br/>rebuild graph.db if needed]
+    C --> CL[cleanup<br/>retract, repair, prune]
+    CL --> CO[consolidate<br/>throttled, proposals only]
+    CO --> H[health checks]
+    H --> RP[report<br/>Claude/Librarian.md]
+```
 
-Sixteen golden queries — keyword, paraphrase, title, tag, entity, and
-degenerate-input traps — run against the production `hybrid_search` path with
-real bge-micro-v2 embeddings over the synthetic 20-note corpus committed in
-[`evals/`](evals/README.md) (synthetic because this repo is public; a private
-golden set lives in the vault itself). Reproduce with
-`python -m tesseract_mcp.evals`.
+Each step is isolated: a failure records an error and later steps still run.
+The CLI exits non-zero when any step failed, so a scheduler can alert on it.
 
-## Tools
+## Features
 
-| | Tool | Purpose |
-|---|---|---|
-| **Orient** | `onboard` | Call first in a new session — constitution, routing, cheat-sheet, graph status |
-| **Retrieve** | `search_brain` | Hybrid search (BM25 + vector, RRF-fused), optional tag/folder filters |
-| | `context_bundle` | One call: search hits + their graph entities + related notes |
-| | `recall_bundle` | Digest/resume raw material for the recall skills — one read-only call |
-| | `read_note` | Read any note |
-| | `query_notes` | Query notes by frontmatter metadata |
-| | `get_backlinks` | Notes whose `[[wikilinks]]` point at a note |
-| | `list_recent` | Recently modified notes |
-| | `list_tasks` | Checkbox tasks across the vault |
-| **Write** | `log_session` | Session log into `Claude/Sessions/` |
-| | `capture` | Quick thought into `Claude/Inbox/` |
-| | `upsert_concept` | Evergreen notes in `Claude/Concepts/` |
-| | `write_note` | General write — quarantined to `Claude/` unless confirmed |
-| | `add_task` | Checkbox task in `Claude/Tasks.md` (Obsidian Tasks format) |
-| **Graph** | `index_brain` | Extract entities from new/changed notes |
-| | `find_entity` | Look up entities by name/alias |
-| | `related_notes` | GraphRAG: notes connected via shared entities, with the chain |
-| | `graph_stats` | Entity/edge/mention counts |
-| | `consolidate_graph` | Merge duplicate entities (dry-run default) |
-| **Organize** | `organize_vault` | Autonomous filing sweep (dry-run default) |
-| | `librarian_status` | Last caretaker sweep + health report (read-only) |
-| | `undo_move` | Revert a journaled move |
+| Area | What it does |
+|---|---|
+| **Hybrid search** | BM25L and embedding cosine similarity over the same candidate set, fused with RRF (k = 60). Reuses Obsidian Smart Connections vectors when fresh; falls back to the same model (bge-micro-v2) locally so the vector space is never mixed. |
+| **Semantic graph** | An LLM pass extracts people, organizations, domains, topics, projects and sources into entity notes under `Claude/Graph/`, mirrored into SQLite for traversal. `related_notes` explains every connection with its entity chain. |
+| **Write contract** | `vault.py` contains every path to the vault and quarantines writes to `Claude/`. Writing elsewhere requires `confirm_outside_claude=True`. The human-readable rules ship as a constitution note. |
+| **Structured sheets** | A human folder becomes agent-writable only when it holds a `_schema.md`. `sheet_upsert` validates every field against that schema. |
+| **Organizer** | Files new notes by embedding neighbor vote. A share of ≥ 0.7 moves the note; anything less becomes a proposal. Every move is journaled and reversible with `undo_move`. |
+| **Graph cleanup** | Retracts mentions of deleted notes, repairs dangling relations and merge-stub chains, and prunes caches. Retiring an entity is propose-only. |
+| **Consolidation** | Finds duplicate entities with an LLM pass. Dry-run by default; the Librarian only ever proposes merges. |
+| **Recall harness** | Claude Code skills that turn the vault into memory you can question. See [Skills](#skills). |
+| **Provisioning** | One command installs a pinned set of 14 Obsidian plugins, seeds settings, and installs the `Claude/` conventions tree. `--check` reports drift. |
+| **Session hooks** | A SessionStart hook injects project recall into new Claude Code sessions; a Stop hook nudges `log_session` after significant work. Both fail silent. |
+
+### Skills
+
+Installed with `python -m tesseract_mcp.skill_sync` from [`skills/`](skills/).
+
+| Skill | Purpose |
+|---|---|
+| `/recall` | Researched answer from the vault, every claim cited as a `[[wikilink]]`; filed into `Claude/Answers/` |
+| `/resume` | Briefing on where a project left off |
+| `/digest` | Review of what changed: notes, captures, tasks, health |
+| `/connections` | Graph serendipity: what links to a topic |
+| `/clip` | Compile one external source into a cited Inbox note |
+| `/distill` | Promote repeated captures into evergreen concepts |
+| `/decide` | Record a decision in the append-only ledger |
+| `/rounds` | Read-only health inspection of the caretakers |
+| `/dossier` | Deep multi-section briefing on a topic |
 
 ## Quickstart
 
+Requirements: Python 3.11+, an Obsidian vault, and the `claude` or `codex`
+CLI on `PATH` for entity extraction. The commands below use the Windows
+layout the repo currently targets (`.venv\Scripts\`).
+
 ```powershell
-git clone <repo> ; cd tesseract-mcp
+git clone https://github.com/DeepExtrema/tesseract-mcp
+cd tesseract-mcp
 python -m venv .venv
 .venv\Scripts\pip install -e .
-
-# Provision a fresh vault (plugins, settings, conventions)
-python -m tesseract_mcp.provision <path-to-vault>
-
-# Register the curated MCP server set (tesseract + web/paper ingest)
-$env:TESSERACT_VAULT_PATH = "<path-to-vault>"
-.venv\Scripts\python -m tesseract_mcp.mcp_sync
 ```
 
-The manifest lives in `mcp-servers.json`; sync is additive-only (existing
-entries are never modified or removed).
-
-Then open the vault once in Obsidian (disable Restricted Mode, complete
-LiveSync setup) and run the `index_brain` tool.
-
-## Scheduled maintenance
-
-The Librarian is the single scheduled task for vault upkeep:
+Provision a vault (plugins, settings, conventions tree). It is idempotent and
+never overwrites existing files.
 
 ```powershell
-python -m tesseract_mcp.librarian <path-to-vault>
+.venv\Scripts\python -m tesseract_mcp.provision <path-to-vault>
 ```
 
-It drains the index backlog, runs the organizer sweep, rebuilds the graph
-cache when needed, proposes consolidation merges (dry-run only), and writes
-a health report to `Claude/Librarian.md`. Use `librarian_status` to read
-the last sweep without running it.
+Register the curated MCP server set (tesseract plus fetch and arxiv ingest)
+into Claude Code. Sync is additive: existing entries are never changed.
 
-**First run against a real vault must use `--dry-run`** and be human-reviewed
-before scheduling unattended applies — same operational rule as the
-organizer. Dry-run prints the formatted report and JSON result without
-writing state, moves, or throttle baselines.
+```powershell
+$env:TESSERACT_VAULT_PATH = "<path-to-vault>"
+.venv\Scripts\python -m tesseract_mcp.mcp_sync --check   # preview
+.venv\Scripts\python -m tesseract_mcp.mcp_sync           # apply
+```
 
-Model selection for the `claude` extractor backend (ignored by `codex`):
+Then open the vault once in Obsidian (disable Restricted Mode, finish LiveSync
+setup) and call the `index_brain` tool to build the graph.
 
-| Env var | Default | Used for |
+## MCP client configuration
+
+The server is a stdio process started by the `tesseract-mcp` console script.
+It needs one environment variable, `TESSERACT_VAULT_PATH`.
+
+**Claude Code**: `mcp_sync` does this for you; the manual equivalent is:
+
+```powershell
+claude mcp add --scope user tesseract -e TESSERACT_VAULT_PATH=C:\Vaults\Tesseract -- C:\path\to\tesseract-mcp\.venv\Scripts\tesseract-mcp.exe
+```
+
+**Claude Desktop**: add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "tesseract": {
+      "command": "C:\\path\\to\\tesseract-mcp\\.venv\\Scripts\\tesseract-mcp.exe",
+      "env": { "TESSERACT_VAULT_PATH": "C:\\Vaults\\Tesseract" }
+    }
+  }
+}
+```
+
+Any MCP client that can launch a stdio server works the same way. In a new
+session, call `onboard` first.
+
+## Tool reference
+
+25 tools, grouped by what they touch. Write tools stay inside `Claude/`
+unless a call explicitly confirms otherwise.
+
+| Group | Tool | Purpose |
 |---|---|---|
-| `TESSERACT_EXTRACT_MODEL` | `haiku` | Per-note entity extraction |
-| `TESSERACT_CONSOLIDATE_MODEL` | `sonnet` | Consolidation merge proposals |
+| **Orient** | `onboard` | Call first: constitution, routing, cheat-sheet, graph status |
+| **Retrieve** | `search_brain` | Hybrid search with optional tag/folder filters |
+| | `context_bundle` | Search hits plus their graph entities and related notes, in one call |
+| | `recall_bundle` | Read-only raw material for `/digest` (`mode="digest"`) and `/resume` (`mode="resume"`) |
+| | `read_note` | Read any note |
+| | `query_notes` | Filter notes by frontmatter metadata |
+| | `get_backlinks` | Notes whose `[[wikilinks]]` point at a note |
+| | `list_recent` | Recently modified notes |
+| | `list_tasks` | Checkbox tasks across the vault |
+| **Write** | `log_session` | Session note in `Claude/Sessions/` |
+| | `capture` | Timestamped thought in today's `Claude/Inbox/` note |
+| | `upsert_concept` | Create or extend an evergreen note in `Claude/Concepts/` |
+| | `write_note` | General write; outside `Claude/` only with `confirm_outside_claude=True` |
+| | `add_task` | Obsidian Tasks checkbox in `Claude/Tasks.md` |
+| **Sheets** | `sheet_upsert` | Schema-validated create/update of one row in a registered sheet |
+| | `sheet_query` | Typed filter/sort over a sheet's rows |
+| | `sheet_schema` | List sheets, or show one sheet's full contract |
+| **Graph** | `index_brain` | Extract entities from new/changed notes; call again while `remaining > 0` |
+| | `find_entity` | Look up entities by name or alias, optional type filter |
+| | `related_notes` | Notes connected through shared entities, with the chain |
+| | `graph_stats` | Entity, edge and mention counts |
+| | `consolidate_graph` | Merge duplicate entities (dry-run by default) |
+| **Organize** | `organize_vault` | Neighbor-vote filing sweep (dry-run by default) |
+| | `librarian_status` | Last sweep's results, health checks and pending proposals (read-only) |
+| | `undo_move` | Reverse the organizer's most recent move of a note |
+
+## Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TESSERACT_VAULT_PATH` | required | Vault root the server opens |
+| `TESSERACT_STATE_DIR` | `~/.tesseract-mcp/<vault-hash>/` | Where caches and Librarian state live |
+| `TESSERACT_EXTRACTOR` | `codex` | Extraction backend: `codex` or `claude` |
+| `TESSERACT_EXTRACT_MODEL` | `haiku` | Per-note extraction model (`claude` backend only) |
+| `TESSERACT_CONSOLIDATE_MODEL` | `sonnet` | Consolidation model (`claude` backend only) |
+| `CLAUDE_SETTINGS_PATH` | `~/.claude/settings.json` | Settings file `hook_sync` writes hooks into |
+
+`mcp-servers.json` is the curated server manifest and
+`vault-template/plugins.json` pins the Obsidian plugin versions.
+
+## Operator CLIs
+
+These run outside the MCP server and are never exposed as tools.
+
+| Command | What it does |
+|---|---|
+| `python -m tesseract_mcp.librarian <vault> [--dry-run]` | The scheduled caretaker sweep |
+| `python -m tesseract_mcp.indexer <vault> [--rebuild-only]` | Index directly, or rebuild `graph.db` from the markdown |
+| `python -m tesseract_mcp.organize <vault> [--dry-run]` | Run only the filing sweep |
+| `python -m tesseract_mcp.cleanup <vault> [--apply-retirements]` | Graph cleanup; applies entity retirements on request |
+| `python -m tesseract_mcp.provision <vault> [--check]` | Provision or check a vault |
+| `python -m tesseract_mcp.mcp_sync [--check]` | Register the MCP server set in Claude Code |
+| `python -m tesseract_mcp.skill_sync [--check]` | Install the skills into `~/.claude/skills` |
+| `python -m tesseract_mcp.hook_sync [--check \| --install]` | Install the SessionStart and Stop hooks |
+| `python -m tesseract_mcp.evals` | Run the retrieval benchmark |
+
+> **First Librarian run on a real vault: use `--dry-run`** and review the
+> report before scheduling unattended runs. Dry-run writes no state, moves,
+> report or throttle baselines. `scripts/librarian-task.cmd` is the Windows
+> Task Scheduler entry point.
+
+### Trust boundaries
+
+- The `Claude/` write quarantine is enforced by the MCP server's write tools.
+  The operator CLIs above also write elsewhere (`.obsidian/plugins`,
+  vault-root `AGENTS.md` and `CLAUDE.md`, organizer moves), so review them
+  before pointing them at a vault you care about.
+- Content arriving through `fetch` and `arxiv` is untrusted. It lands in
+  notes, and the extractor reads full note text, so treat anything recalled
+  from ingested sources as data, not instructions.
+
+## Retrieval quality
+
+Latest recorded baseline (2026-07-11), from 17 golden queries run against the
+production `hybrid_search` path with real bge-micro-v2 embeddings over the
+synthetic fixture corpus in [`evals/`](evals/README.md):
+
+| success@5 | success@10 | recall@5 | recall@10 | MRR |
+|---|---|---|---|---|
+| 0.94 | 1.00 | 0.94 | 1.00 | 0.86 |
+
+The corpus is synthetic because this repo is public; a private golden set
+lives in the vault. Reproduce with `python -m tesseract_mcp.evals`.
+
+## Repository layout
+
+```text
+src/tesseract_mcp/   server, retrieval, graph, organizer, librarian, CLIs
+skills/              Claude Code skills (/recall, /resume, /digest, ...)
+scripts/hooks/       SessionStart and Stop hooks
+vault/               constitution and root guide installed into vaults
+vault-template/      pinned Obsidian plugins and settings
+evals/               synthetic fixture vault and golden queries
+server/              CouchDB + Caddy stack for LiveSync
+docs/                architecture, design specs and plans
+tests/               pytest suite
+```
+
+## Contributing
+
+```powershell
+.venv\Scripts\pip install -e ".[dev]"
+.venv\Scripts\python -m pytest -q
+```
+
+- Base branch is `codex/architecture-roadmap`. Open PRs against it.
+- Keep markdown authoritative: anything the server derives must be rebuildable from the vault.
+- Never import numpy, torch or sentence-transformers lazily inside a tool body. Warm them at startup (`server._warm_start()`); see the appendix in [ARCHITECTURE.md](docs/ARCHITECTURE.md). Verify with `python scripts/probe_server.py`.
+- Eval thresholds live in `tests/test_evals.py`. If the baseline drops below a floor, fix the fixture or golden set; never lower the floor.
+- Agents: run sync tools with `--check` and against throwaway vaults only; live syncs need the owner's consent (see [AGENTS.md](AGENTS.md)).
 
 ## Going deeper
 
-- [Architecture deep dive](docs/ARCHITECTURE.md) — retrieval pipeline,
-  graph design, module map.
-- [Server deployment](server/DEPLOY.md) — CouchDB + Caddy for LiveSync.
+- [Architecture deep dive](docs/ARCHITECTURE.md): retrieval, graph, write contract, organizer, Librarian, module map
+- [Server deployment](server/DEPLOY.md): CouchDB + Caddy for LiveSync
+- [Evals](evals/README.md): query schema and baseline history
+
+## License
+
+No license file has been added yet, so all rights are reserved by default.
