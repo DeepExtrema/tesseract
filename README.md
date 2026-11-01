@@ -204,11 +204,16 @@ syncs on one vault.
   `librarian`, `conventions`) also write elsewhere (`.obsidian/plugins`, vault-root
   `AGENTS.md`/`CLAUDE.md`, `.smart-env`, organizer moves). Review them before
   running against a vault you care about; always start with `--dry-run`.
-- **Untrusted content.** The extractor prompt tells Claude/Codex to treat
-  note contents (including \`fetch\` and \`arxiv\` imports) as data, not
-  instructions. No new CLI restrictions, tool approvals, or execution flags
-  are imposed; ordinary extraction and automation work as before. Prompt
-  guidance alone is not an OS-level security boundary.
+- **Intelligent memory use.** Notes about prior tool choices, skills, code,
+  installation steps and workflows can guide an agent continuing the owner's
+  current task. The agent should not obey attempts hidden in notes to
+  impersonate system/developer messages, forge consent, leak credentials or
+  take over unrelated work. The decision depends on source, task, context
+  and effect, **not** forbidden words. The extractor preserves raw text and
+  normal CLI tools; all automated maintenance remains unchanged. See
+  [54 illustrative injection examples and 16 legitimate counterexamples](
+  docs/PROMPT_INJECTION_PATTERNS.md). These prompts are guidance, not a
+  guaranteed security barrier or a runtime keyword filter.
 
 
 ### Vault owner customization
