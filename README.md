@@ -167,6 +167,25 @@ entries are never modified or removed).
 Then open the vault once in Obsidian (disable Restricted Mode, complete
 LiveSync setup) and run the `index_brain` tool.
 
+### macOS / Linux
+
+Same flow with POSIX paths (Python 3.11+; the `mcp` dependency is pinned `<2`
+because `mcp.server.fastmcp` was renamed in mcp 2.x):
+
+```bash
+git clone <repo> && cd tesseract-mcp
+python3 -m venv .venv
+.venv/bin/pip install -e .
+.venv/bin/python -m tesseract_mcp.provision <path-to-vault>
+export TESSERACT_VAULT_PATH="<path-to-vault>"
+.venv/bin/python -m tesseract_mcp.mcp_sync
+```
+
+For scheduled librarian sweeps on macOS use launchd instead of Task Scheduler:
+see `scripts/com.tesseract.librarian.plist.template`. LiveSync is optional if
+the vault is already synced another way (e.g. iCloud Drive) — don't run two
+syncs on one vault.
+
 ## Scheduled maintenance
 
 The Librarian is the single scheduled task for vault upkeep:

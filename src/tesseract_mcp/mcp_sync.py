@@ -16,6 +16,8 @@ import subprocess
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from . import platform_paths
+
 
 class MissingVaultError(RuntimeError):
     """A manifest entry needs {VAULT} but no vault path was provided."""
@@ -58,7 +60,11 @@ def load_manifest(path: Path) -> list[ServerSpec]:
 
 
 def _sub(text: str, repo_root: Path, vault: str | None) -> str:
-    out = text.replace("{REPO}", str(repo_root))
+    out = text.replace(
+        "{TESSERACT_BIN}",
+        str(platform_paths.venv_script(repo_root, "tesseract-mcp")),
+    )
+    out = out.replace("{REPO}", str(repo_root))
     if "{VAULT}" in out:
         if vault is None:
             raise MissingVaultError(
