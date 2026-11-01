@@ -12,7 +12,7 @@ from .extractor import consolidation_extractor, extraction_extractor
 from .vault import Vault, VaultError
 
 INSTRUCTIONS = """Tesseract mind database: a shared Obsidian vault (markdown,
-LiveSync-synced) used as persistent memory by Taimoor and his AI agents.
+LiveSync-synced) used as persistent memory by its human owner and their AI agents.
 
 Orientation: call the `onboard` tool first in a new session. Read rules in
 Claude/README.md (the constitution) before writing.

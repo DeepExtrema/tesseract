@@ -4,7 +4,7 @@
     {
       "name": "tesseract",
       "transport": "stdio",
-      "command": "{REPO}\\.venv\\Scripts\\tesseract-mcp.exe",
+      "command": "{TESSERACT_BIN}",
       "args": [],
       "env": { "TESSERACT_VAULT_PATH": "{VAULT}" },
       "why": "The mind database - persistent shared memory for agents."
