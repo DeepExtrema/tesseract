@@ -4,6 +4,7 @@
 
 **Persistent, shared memory for AI agents, living in a plain-markdown Obsidian vault.**
 
+[![CI](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/ci.yml/badge.svg?branch=codex/architecture-roadmap)](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![MCP server](https://img.shields.io/badge/MCP-FastMCP%20server-6E56CF)](https://modelcontextprotocol.io)
 [![Obsidian](https://img.shields.io/badge/Obsidian-vault-7C3AED?logo=obsidian&logoColor=white)](https://obsidian.md)
@@ -136,7 +137,7 @@ The CLI exits non-zero when any step failed, so a scheduler can alert on it.
 | Area | What it does |
 |---|---|
 | **Hybrid search** | BM25L and embedding cosine similarity over the same candidate set, fused with RRF (k = 60). Reuses Obsidian Smart Connections vectors when fresh; falls back to the same model (bge-micro-v2) locally so the vector space is never mixed. |
-| **Semantic graph** | An LLM pass extracts people, organizations, domains, topics, projects and sources into entity notes under `Claude/Graph/`, mirrored into SQLite for traversal. `related_notes` explains every connection with its entity chain. |
+| **Semantic graph** | An LLM pass extracts people, organizations, domains, topics, projects and sources into entity notes under `Claude/Graph/`, mirrored into SQLite for traversal. `related_notes` ranks connections by strength (each shared entity adds 1/hop, so direct and multiple links win), caps the list (default 20), and explains each one with its entity chain. |
 | **Write contract** | `vault.py` contains every path to the vault and quarantines writes to `Claude/`. Writing elsewhere requires `confirm_outside_claude=True`. The human-readable rules ship as a constitution note. |
 | **Structured sheets** | A human folder becomes agent-writable only when it holds a `_schema.md`. `sheet_upsert` validates every field against that schema. |
 | **Organizer** | Files new notes by embedding neighbor vote. A share of ≥ 0.7 moves the note; below that, an unfiled note becomes a proposal for a human and an already-filed note stays put. Every move is journaled and reversible with `undo_move`. |
@@ -231,7 +232,7 @@ unless a call explicitly confirms otherwise.
 |---|---|---|
 | **Orient** | `onboard` | Call first: constitution, routing, cheat-sheet, graph status |
 | **Retrieve** | `search_brain` | Hybrid search with optional tag/folder filters |
-| | `context_bundle` | Search hits plus their graph entities and related notes, in one call |
+| | `context_bundle` | Search hits plus their graph entities and related notes in one call; the related list is capped at 20 |
 | | `recall_bundle` | Read-only raw material for `/digest` (`mode="digest"`) and `/resume` (`mode="resume"`) |
 | | `read_note` | Read any note |
 | | `query_notes` | Filter notes by frontmatter metadata |
@@ -248,7 +249,7 @@ unless a call explicitly confirms otherwise.
 | | `sheet_schema` | List sheets, or show one sheet's full contract |
 | **Graph** | `index_brain` | Extract entities from new/changed notes; call again while `remaining > 0` |
 | | `find_entity` | Look up entities by name or alias, optional type filter |
-| | `related_notes` | Notes connected through shared entities, with the chain |
+| | `related_notes` | Notes connected through shared entities, ranked by strength and capped by `limit` (default 20), with the chain |
 | | `graph_stats` | Entity, edge and mention counts |
 | | `consolidate_graph` | Merge duplicate entities (dry-run by default) |
 | **Organize** | `organize_vault` | Neighbor-vote filing sweep (dry-run by default) |
@@ -338,7 +339,7 @@ tests/               pytest suite
 .venv\Scripts\python -m pytest -q
 ```
 
-- Base branch is `codex/architecture-roadmap`. Open PRs against it.
+- Base branch is `codex/architecture-roadmap`. Open PRs against it; CI runs the full suite on every PR ([`ci.yml`](.github/workflows/ci.yml)).
 - Keep markdown authoritative: anything the server derives must be rebuildable from the vault.
 - Never import numpy, torch or sentence-transformers lazily inside a tool body. Warm them at startup (`server._warm_start()`); see the appendix in [ARCHITECTURE.md](docs/ARCHITECTURE.md). Verify with `python scripts/probe_server.py`.
 - Eval thresholds live in `tests/test_evals.py`. If the baseline drops below a floor, fix the fixture or golden set; never lower the floor.
