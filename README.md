@@ -45,11 +45,6 @@ What makes it different from "a vector database with an MCP wrapper":
 - **Self-maintaining.** One scheduled Librarian sweep indexes, files and reports what needs repair.
 - **Rebuildable state.** Every cache lives under `~/.tesseract-mcp/` and can be deleted and rebuilt from the vault.
 
-<div align="center">
-<img src="docs/assets/hero-graph.png" alt="The vault's semantic graph in Obsidian" width="80%">
-<br><sub>The extracted graph, as Obsidian renders it.</sub>
-</div>
-
 ### Who it's for
 
 - You run more than one AI coding agent and want them to share what they learn.
