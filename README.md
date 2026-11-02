@@ -99,64 +99,6 @@ embedding cache and `graph.db` mirror live in a per-vault state directory, so
 only the vault itself ever travels through LiveSync. Full detail:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-<<<<<<< HEAD
-## What's inside
-
-### Hybrid search
-BM25 keyword ranking and embedding cosine similarity, fused with Reciprocal
-Rank Fusion — rank-based fusion means the two score spaces never need to be
-normalized against each other. Vectors reuse Obsidian's Smart Connections
-embeddings when fresh, with a same-model local fallback (bge-micro-v2) so the
-similarity space is never mixed.
-
-### A semantic knowledge graph (GraphRAG)
-An LLM pass extracts people, organizations, domains, topics, projects and
-sources from notes into real markdown entity notes under `Claude/Graph/` —
-visible in Obsidian's graph, synced like everything else, and mirrored into
-SQLite for traversal. `related_notes` walks entity chains between notes;
-`context_bundle` composes hybrid search and graph context in one call.
-
-### A write contract agents can't break
-Agents write freely only under `Claude/` (sessions, concepts, inbox, tasks,
-decisions, graph). Everything else is the human's: readable always, writable
-only with explicit confirmation — enforced in code, not by convention. The
-human-readable rules live in the vault as a constitution.
-
-### An autonomous organizer
-New notes are filed into the existing folder taxonomy by embedding
-neighbor-vote (≥0.7 agreement moves the note; less queues a human proposal).
-Every move is journaled and reversible.
-
-### The Librarian
-A single scheduled caretaker loop (`python -m tesseract_mcp.librarian <vault>`)
-runs indexing, organizing, cache maintenance, throttled consolidation
-proposals, and health checks in one pass — replacing separate indexer and
-organizer cron jobs. Sweep reports land in `Claude/Librarian.md`; the
-`librarian_status` MCP tool reads the last run.
-
-### One-command vault provisioning
-`python -m tesseract_mcp.provision <path-to-vault>` installs a pinned plugin
-set, seeds settings (embed model pinned to what the search stack reads), and
-installs the agent conventions tree. `--check` reports version drift. Every
-plugin asset is checked against a reviewed SHA-256 lock before anything is
-written; to bump a pin, see [docs/PLUGIN_LOCK.md](docs/PLUGIN_LOCK.md).
-
-### The recall harness
-Claude Code skills turn the vault into a memory you can question:
-`/recall` (researched answers, every claim cited as a `[[wikilink]]`),
-`/digest` (the review ritual), `/resume` (project briefings), and
-`/connections` (graph serendipity). `/recall` files every answer into
-`Claude/Answers/`, where the Librarian indexes it like any note — so
-answers become retrieval sources and the vault compounds from asking
-questions, not just ingesting. Five further rituals are drafted and
-awaiting their acceptance runs: `/clip` (compile one external source
-into a cited Inbox note), `/distill` (promote repeated captures into
-evergreen concepts), `/decide` (the append-only decision ledger),
-`/rounds` (read-only caretaker health inspection), and `/dossier`
-(deep multi-section briefings). Skills live in [`skills/`](skills/) and
-install with `python -m tesseract_mcp.skill_sync` (additive; `--check`
-reports drift; existing skills are never modified without `--force`).
-
 ### Retrieval pipeline
 
 ```mermaid
@@ -202,7 +144,7 @@ The CLI exits non-zero when any step failed, so a scheduler can alert on it.
 | **Graph cleanup** | Retracts mentions of deleted notes, repairs dangling relations and merge-stub chains, and prunes caches. The Librarian only proposes entity retirements; `cleanup --apply-retirements` applies them. |
 | **Consolidation** | Finds duplicate entities with an LLM pass. Dry-run by default; the Librarian only ever proposes merges. |
 | **Recall harness** | Claude Code skills that turn the vault into memory you can question. See [Skills](#skills). |
-| **Provisioning** | One command installs a pinned set of 14 Obsidian plugins, seeds settings, and installs the `Claude/` conventions tree. `--check` reports drift. |
+| **Provisioning** | One command installs a pinned set of 14 Obsidian plugins, seeds settings, and installs the `Claude/` conventions tree. Every plugin asset is checked against a reviewed SHA-256 lock before anything is written ([bumping a pin](docs/PLUGIN_LOCK.md)). `--check` reports drift. |
 | **Session hooks** | A SessionStart hook injects project recall into new Claude Code sessions; a Stop hook nudges `log_session` after significant work. Both fail silent. |
 
 ### Skills
