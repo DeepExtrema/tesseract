@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 
 from . import indexer
 from .search import iter_note_files
-from .vault import Vault, VaultError
+from .vault import Vault, VaultError, _retry_locked
 
 
 def _no_md(rel: str) -> str:
@@ -36,31 +37,80 @@ def duplicate_stem_exists(vault: Vault, rel: str) -> bool:
     return False
 
 
-def _rewrite_links(vault: Vault, src_rel: str, dst_rel: str) -> list[dict]:
+def _decode(data: bytes) -> str:
+    # surrogateescape round-trips any byte that is not valid UTF-8, so a
+    # rewrite never silently drops content from a human note
+    return data.decode("utf-8", "surrogateescape")
+
+
+def _encode(text: str) -> bytes:
+    return text.encode("utf-8", "surrogateescape")
+
+
+def _write_bytes(path: Path, data: bytes) -> None:
+    """Atomic byte-exact write: no newline translation (CRLF/LF stay as the
+    file had them) and no half-written note if the process dies."""
+    tmp = path.with_name(path.name + ".tmp-move")
+    tmp.write_bytes(data)
+    _retry_locked(lambda: os.replace(tmp, path))
+
+
+def _move_file(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    _retry_locked(lambda: os.replace(src, dst))
+
+
+def _plan_rewrites(
+    vault: Vault, src_rel: str, dst_rel: str
+) -> list[tuple[Path, str, bytes, bytes, int]]:
+    """(path, rel, original bytes, rewritten bytes, count) for every note
+    with a path-qualified link to src_rel. Reads only; writes nothing."""
     pattern = _link_pattern(src_rel)
     replacement = "[[" + _no_md(dst_rel)
-    rewrites: list[dict] = []
+    plans = []
     for p, rel in iter_note_files(vault):
-        text = p.read_text(encoding="utf-8", errors="ignore")
-        new_text, count = pattern.subn(replacement, text)
+        original = p.read_bytes()
+        new_text, count = pattern.subn(replacement, _decode(original))
         if count:
-            p.write_text(new_text, encoding="utf-8")
-            rewrites.append({"path": rel, "count": count})
-    return rewrites
+            plans.append((p, rel, original, _encode(new_text), count))
+    return plans
 
 
 def move_note(vault: Vault, old_rel: str, new_rel: str) -> dict:
+    """Move a note and rewrite its inbound path-qualified links, all or
+    nothing: links are planned in memory, the file moves first, then the
+    rewrites land; any failure restores every touched file and moves the
+    note back before re-raising, so no link is left pointing at a path the
+    note never reached."""
     src = vault.resolve(old_rel)
     dst = vault.resolve(new_rel)
     if not src.is_file():
         raise VaultError(f"Cannot move: not a file: {old_rel}")
     if dst.exists():
         raise VaultError(f"Cannot move: destination exists: {new_rel}")
-    rewrites = _rewrite_links(vault, old_rel, new_rel)
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    os.replace(src, dst)
+    plans = _plan_rewrites(vault, old_rel, new_rel)
+    _move_file(src, dst)
+    written: list[tuple[Path, bytes]] = []
+    try:
+        for p, _rel, original, rewritten, _count in plans:
+            target = dst if p == src else p  # a self-link travels with the note
+            _write_bytes(target, rewritten)
+            written.append((target, original))
+    except BaseException:
+        for target, original in reversed(written):
+            try:
+                _write_bytes(target, original)
+            except OSError:
+                pass  # best effort: keep restoring the rest
+        try:
+            _move_file(dst, src)
+        except OSError:
+            pass
+        raise
     indexer.rename_manifest_entry(vault.root, old_rel, new_rel)
-    return {"from": old_rel, "to": new_rel, "rewrites": rewrites}
+    return {"from": old_rel, "to": new_rel,
+            "rewrites": [{"path": rel, "count": count}
+                         for _p, rel, _o, _r, count in plans]}
 
 
 def reverse_rewrites(
@@ -73,7 +123,7 @@ def reverse_rewrites(
         p = vault.resolve(rel)
         if not p.is_file():
             continue
-        p.write_text(
-            pattern.sub(replacement, p.read_text(encoding="utf-8", errors="ignore")),
-            encoding="utf-8",
-        )
+        original = p.read_bytes()
+        new_text, count = pattern.subn(replacement, _decode(original))
+        if count:
+            _write_bytes(p, _encode(new_text))

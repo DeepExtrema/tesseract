@@ -10,7 +10,6 @@ threshold, hard exclusions below.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -19,7 +18,7 @@ from . import cache, indexer
 from . import embeddings as embeddings_mod
 from . import sheets
 from .embeddings import cosine
-from .mover import duplicate_stem_exists, move_note, reverse_rewrites
+from .mover import _move_file, duplicate_stem_exists, move_note, reverse_rewrites
 from .search import parse_frontmatter
 from .vault import Vault, VaultError
 
@@ -179,8 +178,7 @@ def undo_move(vault: Vault, note_rel: str) -> dict:
         raise VaultError(f"Cannot undo: file no longer at {entry['to']}")
     if dst.exists():
         raise VaultError(f"Cannot undo: original location occupied: {entry['from']}")
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    os.replace(src, dst)
+    _move_file(src, dst)  # rides out transient sync/AV locks
     reverse_rewrites(
         vault,
         entry["from"],
