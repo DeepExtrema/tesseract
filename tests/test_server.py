@@ -33,6 +33,24 @@ def test_all_tools_registered():
     }
 
 
+def test_readonly_profile_registers_no_write_tools(monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("TESSERACT_READONLY", "1")
+    try:
+        ro = importlib.reload(server)
+        tools = {t.name for t in asyncio.run(ro.mcp.list_tools())}
+    finally:
+        monkeypatch.delenv("TESSERACT_READONLY")
+        importlib.reload(server)
+    assert tools == {
+        "search_brain", "read_note", "list_tasks", "query_notes",
+        "get_backlinks", "list_recent", "find_entity", "related_notes",
+        "graph_stats", "onboard", "context_bundle", "librarian_status",
+        "recall_bundle", "sheet_query", "sheet_schema",
+    }
+
+
 def test_missing_env_var_raises(monkeypatch):
     monkeypatch.delenv("TESSERACT_VAULT_PATH")
     with pytest.raises(VaultError, match="TESSERACT_VAULT_PATH"):

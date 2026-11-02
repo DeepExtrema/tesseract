@@ -345,6 +345,17 @@ tests/               pytest suite
 - Eval thresholds live in `tests/test_evals.py`. If the baseline drops below a floor, fix the fixture or golden set; never lower the floor.
 - Agents: run sync tools with `--check` and against throwaway vaults only; live syncs need the owner's consent (see [AGENTS.md](AGENTS.md)).
 
+### Opt-in hardening
+
+Off by default. Leaving them unset keeps scheduled sweeps and the full tool
+set exactly as they are.
+
+| Knob | Effect |
+|---|---|
+| `librarian --max-moves N` | Caps organizer moves per sweep; confident moves past the cap are skipped and re-evaluated next sweep (`0` = file nothing) |
+| `TESSERACT_READONLY=1` | MCP server registers only read tools; `log_session`, `capture`, `upsert_concept`, `write_note`, `add_task`, `sheet_upsert`, `index_brain`, `consolidate_graph`, `organize_vault`, `undo_move` are absent |
+| `TESSERACT_EXTRACTOR_NO_TOOLS=1` | Extractor CLI runs with no tools (`claude --tools ""`, `codex exec --sandbox read-only`), so instructions inside note text cannot act during extraction |
+
 ## Going deeper
 
 - [Architecture deep dive](docs/ARCHITECTURE.md): retrieval, graph, write contract, organizer, Librarian, module map

@@ -229,6 +229,19 @@ def test_sweep_duplicate_stem_becomes_proposal(org_vault):
     assert (org_vault.root / "Loose Space Note.md").is_file()  # not moved
 
 
+def test_sweep_move_cap_defers_confident_moves(org_vault):
+    (org_vault.root / "Another Space Note.md").write_text(
+        "space mission telemetry\n", encoding="utf-8")
+    report = run_sweep(org_vault, ClusterEmbedder(), apply=True, max_moves=1)
+    assert len(report["moved"]) == 1
+    capped = [s["path"] for s in report["skipped"] if s["reason"] == "move cap reached"]
+    assert len(capped) == 1
+    assert (org_vault.root / capped[0]).is_file()  # deferred note stays put
+
+    zero = run_sweep(org_vault, ClusterEmbedder(), apply=True, max_moves=0)
+    assert zero["moved"] == [] and (org_vault.root / capped[0]).is_file()
+
+
 def test_root_agent_guides_are_never_candidates(org_vault):
     (org_vault.root / "CLAUDE.md").write_text(
         "space vault guide for agents\n", encoding="utf-8")

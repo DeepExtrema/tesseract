@@ -109,6 +109,9 @@ def _stderr_summary(stderr: str | None, cap: int = 300) -> str:
     return text[-cap:]
 
 
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
 class CliExtractor:
     COMMANDS = {"codex": ["codex", "exec"], "claude": ["claude", "-p"]}
 
@@ -143,6 +146,10 @@ class CliExtractor:
             cmd = [resolved, *args]
         if self.model and self.backend == "claude":
             cmd += ["--model", self.model]
+        if os.environ.get("TESSERACT_EXTRACTOR_NO_TOOLS", "").strip().lower() in _TRUTHY:
+            # extraction only needs a JSON reply; deny the CLI every tool so
+            # instructions embedded in note text cannot act
+            cmd += ["--tools", ""] if self.backend == "claude" else ["--sandbox", "read-only"]
         return cmd
 
     def _invoke(self, prompt: str) -> str:

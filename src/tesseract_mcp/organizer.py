@@ -201,7 +201,11 @@ def undo_move(vault: Vault, note_rel: str) -> dict:
     return {"restored": entry["from"], "was": entry["to"]}
 
 
-def run_sweep(vault: Vault, embedder=None, apply: bool = False) -> dict:
+def run_sweep(
+    vault: Vault, embedder=None, apply: bool = False, max_moves: int | None = None
+) -> dict:
+    """max_moves caps moves per sweep (None = unlimited); confident moves past
+    the cap are skipped and re-evaluated next sweep."""
     if embedder is None:
         embedder = embeddings_mod.SentenceTransformerEmbedder()
     vectors = embeddings_mod.get_note_vectors(
@@ -240,6 +244,9 @@ def run_sweep(vault: Vault, embedder=None, apply: bool = False) -> dict:
                 "neighbors": cls.neighbors[:3],
                 "reason": "duplicate stem — bare links would become ambiguous",
             })
+            continue
+        if max_moves is not None and len(moved) >= max_moves:
+            skipped.append({"path": rel, "reason": "move cap reached"})
             continue
         stem_name = rel.rsplit("/", 1)[-1]
         target_rel = f"{cls.folder}/{stem_name}"
