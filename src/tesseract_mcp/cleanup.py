@@ -346,11 +346,17 @@ def main() -> None:
                              "missing-note count looks like a mass deletion")
     args = parser.parse_args()
     vault = Vault(args.vault)
+    from .locking import caretaker_lock
+
     if args.apply_repairs:
-        print(json.dumps(apply_repairs(vault, force=args.force), indent=2))
+        with caretaker_lock(indexer.state_dir(vault.root)):
+            out = apply_repairs(vault, force=args.force)
+        print(json.dumps(out, indent=2))
         return
     if args.apply_retirements:
-        print(json.dumps(apply_retirements(vault, paths=args.paths), indent=2))
+        with caretaker_lock(indexer.state_dir(vault.root)):
+            out = apply_retirements(vault, paths=args.paths)
+        print(json.dumps(out, indent=2))
         return
     print(json.dumps({"deleted_notes": deleted_notes(vault),
                       "orphans": find_orphans(vault)}, indent=2))

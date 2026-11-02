@@ -202,17 +202,20 @@ def main() -> None:
         help="Rebuild the query cache from Claude/Graph markdown without any LLM extraction",
     )
     args = parser.parse_args()
-    if args.rebuild_only:
-        cache.rebuild(Vault(args.vault), db_path(args.vault))
-        print(json.dumps({"rebuilt": True, "db": str(db_path(args.vault))}))
-        return
-    counts = run(
-        Vault(args.vault),
-        extraction_extractor(backend=args.backend),
-        batch=args.batch,
-        force=args.force,
-        retry_failures=args.retry_failures,
-    )
+    from .locking import caretaker_lock
+
+    with caretaker_lock(state_dir(args.vault)):
+        if args.rebuild_only:
+            cache.rebuild(Vault(args.vault), db_path(args.vault))
+            print(json.dumps({"rebuilt": True, "db": str(db_path(args.vault))}))
+            return
+        counts = run(
+            Vault(args.vault),
+            extraction_extractor(backend=args.backend),
+            batch=args.batch,
+            force=args.force,
+            retry_failures=args.retry_failures,
+        )
     print(json.dumps(counts, indent=2))
 
 

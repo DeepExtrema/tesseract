@@ -12,6 +12,7 @@ import json
 import os
 import sqlite3
 import sys
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from . import extractor as extractor_mod
 from . import indexer
 from . import organizer as organizer_mod
 from . import sheets as sheets_mod
+from .locking import caretaker_lock
 from .vault import Vault, VaultError
 
 TS_FMT = "%Y-%m-%d %H:%M:%S"
@@ -580,9 +582,12 @@ def main() -> None:
             "no Librarian sweep has run on this vault yet. Run it with "
             "--dry-run, review the report, then run once by hand with "
             "--confirm-first-run before scheduling it.")
-    result = run_sweep(vault, apply=not args.dry_run,
-                       max_moves=args.max_moves,
-                       auto_cleanup=True if args.auto_cleanup else None)
+    lock = (nullcontext() if args.dry_run
+            else caretaker_lock(indexer.state_dir(vault.root)))
+    with lock:
+        result = run_sweep(vault, apply=not args.dry_run,
+                           max_moves=args.max_moves,
+                           auto_cleanup=True if args.auto_cleanup else None)
     if args.dry_run:
         print(format_report(result, datetime.now()))
     print(json.dumps(result, indent=2, default=str))

@@ -10,6 +10,7 @@ from . import cache as cache_mod, consolidate as consolidate_mod, graph, hybrid,
 from .embeddings import SentenceTransformerEmbedder
 from .extractor import consolidation_extractor, extraction_extractor
 from .vault import Vault, VaultError
+from .locking import caretaker_lock
 
 INSTRUCTIONS = """Tesseract mind database: a shared Obsidian vault (markdown,
 LiveSync-synced) used as persistent memory by its human owner and their AI agents.
@@ -46,6 +47,11 @@ def _write_tool(fn):
 
 
 NO_TOOL_APPLY_ENV = "TESSERACT_NO_TOOL_APPLY"
+
+
+def _caretaker():
+    """Serialize with the Librarian sweep and the caretaker CLIs."""
+    return caretaker_lock(indexer.state_dir(get_vault().root))
 
 
 def _refuse_tool_apply(what: str, cli: str) -> None:
@@ -156,6 +162,8 @@ def organize_vault(apply: bool = False) -> dict:
     if apply:
         _refuse_tool_apply("organize_vault(apply=True)",
                            "python -m tesseract_mcp.organize <vault>")
+        with _caretaker():
+            return organizer_mod.run_sweep(get_vault(), _get_embedder(), apply=True)
     return organizer_mod.run_sweep(get_vault(), _get_embedder(), apply=apply)
 
 
@@ -385,7 +393,8 @@ def index_brain(force: bool = False) -> dict:
     if force:
         _refuse_tool_apply("index_brain(force=True)",
                            "python -m tesseract_mcp.indexer <vault> --force")
-    return indexer.run(get_vault(), _make_extractor(), force=force)
+    with _caretaker():
+        return indexer.run(get_vault(), _make_extractor(), force=force)
 
 
 @mcp.tool()
@@ -421,6 +430,8 @@ def consolidate_graph(apply: bool = False) -> dict:
     if apply:
         _refuse_tool_apply("consolidate_graph(apply=True)",
                            "python -m tesseract_mcp.consolidate <vault> --apply")
+        with _caretaker():
+            return consolidate_mod.run(get_vault(), _make_consolidator(), apply=True)
     return consolidate_mod.run(get_vault(), _make_consolidator(), apply=apply)
 
 

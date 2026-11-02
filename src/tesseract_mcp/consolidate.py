@@ -195,7 +195,15 @@ def main() -> None:
     parser.add_argument("--apply", action="store_true",
                         help="apply proposed merges (default: dry-run)")
     args = parser.parse_args()
-    result = run(Vault(args.vault), consolidation_extractor(backend=args.backend), apply=args.apply)
+    from contextlib import nullcontext
+
+    from .locking import caretaker_lock
+
+    vault = Vault(args.vault)
+    lock = caretaker_lock(state_dir(vault.root)) if args.apply else nullcontext()
+    with lock:
+        result = run(vault, consolidation_extractor(backend=args.backend),
+                     apply=args.apply)
     print(json.dumps(result, indent=2))
 
 

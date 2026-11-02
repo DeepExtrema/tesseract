@@ -10,6 +10,10 @@ from __future__ import annotations
 import argparse
 import json
 
+from contextlib import nullcontext
+
+from .indexer import state_dir
+from .locking import caretaker_lock
 from .organizer import run_sweep
 from .vault import Vault
 
@@ -20,7 +24,10 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true",
                         help="Report without moving anything")
     args = parser.parse_args()
-    report = run_sweep(Vault(args.vault), apply=not args.dry_run)
+    vault = Vault(args.vault)
+    lock = nullcontext() if args.dry_run else caretaker_lock(state_dir(vault.root))
+    with lock:
+        report = run_sweep(vault, apply=not args.dry_run)
     print(json.dumps(report, indent=2))
 
 

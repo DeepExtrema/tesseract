@@ -2,7 +2,8 @@
 # Nightly incremental graph index (macOS/Linux). Indexes only new/changed notes
 # into Claude/Graph/. Does NOT run the organizer, so no notes are ever moved.
 # The Librarian sweep already includes indexing: schedule this OR the
-# Librarian, not both (neither takes a lock against the other).
+# Librarian, not both. If both run, the indexer refuses while a sweep holds
+# the caretaker lock (state dir caretaker.lock) and the night is skipped.
 # Usage: scripts/index-nightly.sh <vault> [state-dir]
 set -u
 REPO="$(cd "$(dirname "$0")/.." && pwd)"

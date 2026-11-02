@@ -322,7 +322,9 @@ These run outside the MCP server and are never exposed as tools.
 > Task Scheduler entry point.
 
 On macOS, schedule with launchd instead. Each template says how to install
-and remove it. Install one of the two, not both:
+and remove it. Install one of the two, not both (if both fire, a caretaker
+lock in the state dir makes the second one refuse rather than write at the
+same time):
 
 | Template | Runs |
 |---|---|
