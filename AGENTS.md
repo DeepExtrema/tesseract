@@ -10,7 +10,7 @@
 
 ## Learned Workspace Facts
 
-- `tesseract-mcp` repo: `C:\Users\Taimoor\Documents\GitHub\tesseract-mcp`, base branch `codex/architecture-roadmap`; run Python with `.venv\Scripts\python`; tests with `.venv\Scripts\python -m pytest -q`.
+- `tesseract-mcp` repo: `C:\Users\Taimoor\Documents\GitHub\tesseract-mcp`, base branch `main`; run Python with `.venv\Scripts\python`; tests with `.venv\Scripts\python -m pytest -q`.
 - Live Tesseract vault: `C:\Vaults\Tesseract`; markdown is source of truth; agent writes quarantined to `Claude/`.
 - Sync deployment: Oracle Always Free A1 VM running `tesseract-mcp/server/` stack (CouchDB + Caddy + DuckDNS); Obsidian Self-hosted LiveSync on the vault.
 - Semantic graph markdown in `Claude/Graph/` is authoritative; derived cache at `~/.tesseract-mcp/graph.db`; run `--rebuild-only` when graph markdown changed without note re-indexing.

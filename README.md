@@ -1,37 +1,67 @@
 <div align="center">
 
-# Tesseract
+<img src="docs/assets/hero.png" alt="tesseract-mcp: a modular MCP server for multi-agent systems" width="100%">
 
 **Persistent, shared memory for AI agents, living in a plain-markdown Obsidian vault.**
 
-[![CI](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/ci.yml/badge.svg?branch=codex/architecture-roadmap)](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/ci.yml)
+[![Cross-platform](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/cross-platform.yml/badge.svg?branch=main)](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/cross-platform.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![MCP server](https://img.shields.io/badge/MCP-FastMCP%20server-6E56CF)](https://modelcontextprotocol.io)
 [![Obsidian](https://img.shields.io/badge/Obsidian-vault-7C3AED?logo=obsidian&logoColor=white)](https://obsidian.md)
 [![25 tools](https://img.shields.io/badge/tools-25-0EA5E9)](#tool-reference)
 [![Retrieval MRR 0.86](https://img.shields.io/badge/retrieval%20MRR-0.86-22C55E)](evals/README.md)
 
-![The vault's semantic graph in Obsidian](docs/assets/hero-graph.png)
+[About](#about) · [Architecture](#architecture) · [Features](#features) · [Quickstart](#quickstart) ·
+[Client configuration](#mcp-client-configuration) · [Tool reference](#tool-reference) ·
+[Configuration](#configuration) · [Operator CLIs](#operator-clis) ·
+[Retrieval quality](#retrieval-quality) · [Contributing](#contributing) · [License](#license)
 
 </div>
 
-Every agent session, on any machine, reads from and writes to the same
-knowledge base. `tesseract-mcp` is the MCP server that lets agents search it,
-extend it, and keep it organized, while the vault's markdown stays the single
-source of truth.
+## About
+
+Agents forget. Every new session of Claude Code, Claude Desktop or Codex starts
+from zero, and whatever one agent learned on one machine is gone for the next.
+Tesseract fixes that with the most boring storage there is: a folder of
+markdown files, open in Obsidian, synced between machines with LiveSync.
+
+`tesseract-mcp` is the MCP server in front of that folder. Any MCP client can
+connect to it and get the same 25 tools: search the vault, read and write
+notes, walk the knowledge graph, log a session, file a task. Several agents
+(a planner, an engineer, a researcher, a scheduled caretaker) read from and
+write to one memory, and the human owns it, in an editor they already use.
+
+<div align="center">
+<img src="docs/assets/system-flow.png" alt="Agents connect through tesseract-mcp to the vault's code, data, web and file resources" width="100%">
+</div>
+
+What makes it different from "a vector database with an MCP wrapper":
 
 - **Hybrid retrieval.** BM25 and embedding similarity fused with Reciprocal Rank Fusion.
-- **A knowledge graph you can open.** Entities extracted by an LLM are written as real markdown notes under `Claude/Graph/`.
+- **A knowledge graph you can open.** Entities extracted by an LLM are written as real markdown notes under `Claude/Graph/`, so the graph is browsable in Obsidian's graph view, not locked in a database.
 - **A write contract enforced in code.** Agents write freely under `Claude/`; everything else needs explicit confirmation.
 - **Self-maintaining.** One scheduled Librarian sweep indexes, files and reports what needs repair.
 - **Rebuildable state.** Every cache lives under `~/.tesseract-mcp/` and can be deleted and rebuilt from the vault.
 
-## Contents
+<div align="center">
+<img src="docs/assets/hero-graph.png" alt="The vault's semantic graph in Obsidian" width="80%">
+<br><sub>The extracted graph, as Obsidian renders it.</sub>
+</div>
 
-[Architecture](#architecture) · [Features](#features) · [Quickstart](#quickstart) ·
-[Client configuration](#mcp-client-configuration) · [Tool reference](#tool-reference) ·
-[Configuration](#configuration) · [Operator CLIs](#operator-clis) ·
-[Retrieval quality](#retrieval-quality) · [Contributing](#contributing) · [License](#license)
+### Who it's for
+
+- You run more than one AI coding agent and want them to share what they learn.
+- You already keep notes in Obsidian and want agents to read and extend them without trashing the vault.
+- You want memory that survives a machine wipe: delete every cache, and the markdown rebuilds it.
+
+### Status
+
+Used daily on a private vault; the public repo is the server, the caretakers
+and a synthetic eval corpus. Windows, macOS and Linux are all supported and
+tested in CI. Treat the organizer and Librarian as power tools: run them
+with `--dry-run` first (the CLI makes you).
 
 ## Architecture
 
@@ -133,6 +163,10 @@ Each step is isolated: a failure records an error and later steps still run.
 The CLI exits non-zero when any step failed, so a scheduler can alert on it.
 
 ## Features
+
+<div align="center">
+<img src="docs/assets/features.png" alt="Modular, multi-agent, tool access, Tesseract core" width="100%">
+</div>
 
 | Area | What it does |
 |---|---|
@@ -382,7 +416,7 @@ tests/               pytest suite
 .venv\Scripts\python -m pytest -q
 ```
 
-- Base branch is `codex/architecture-roadmap`. Open PRs against it; CI runs the full suite on every PR ([`ci.yml`](.github/workflows/ci.yml)).
+- Base branch is `main`. Open PRs against it; CI runs the full suite on every PR ([`ci.yml`](.github/workflows/ci.yml)).
 - Keep markdown authoritative: anything the server derives must be rebuildable from the vault.
 - Never import numpy, torch or sentence-transformers lazily inside a tool body. Warm them at startup (`server._warm_start()`); see the appendix in [ARCHITECTURE.md](docs/ARCHITECTURE.md). Verify with `python scripts/probe_server.py`.
 - Eval thresholds live in `tests/test_evals.py`. If the baseline drops below a floor, fix the fixture or golden set; never lower the floor.
@@ -409,4 +443,4 @@ extraction on, because unattended sweeps read clipped web content.
 
 ## License
 
-No license file has been added yet, so all rights are reserved by default.
+[MIT](LICENSE).

@@ -3,6 +3,9 @@ name = "tesseract-mcp"
 version = "0.1.0"
 description = "MCP server for the Tesseract Obsidian mind database"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+readme = "README.md"
 dependencies = [
     # <2: mcp 2.0 removed mcp.server.fastmcp, the API server.py is built on
     "mcp>=1.2.0,<2",
@@ -17,6 +20,11 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 tesseract-mcp = "tesseract_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/DeepExtrema/tesseract-mcp"
+Documentation = "https://github.com/DeepExtrema/tesseract-mcp/blob/main/docs/ARCHITECTURE.md"
+Issues = "https://github.com/DeepExtrema/tesseract-mcp/issues"
 
 [build-system]
 requires = ["hatchling"]

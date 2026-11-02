@@ -1,0 +1,43 @@
+name: Bug report
+description: Something in the server, a caretaker or a CLI misbehaves
+labels: [bug]
+body:
+  - type: input
+    id: surface
+    attributes:
+      label: Where
+      description: Tool name, CLI module or skill (e.g. `search_brain`, `python -m tesseract_mcp.librarian`, `/recall`)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Include the exact error or the wrong output. Redact vault content you don't want public.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. provision a throwaway vault
+        2. ...
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Python version, MCP client (Claude Code / Desktop / Codex), `TESSERACT_EXTRACTOR`
+      placeholder: Windows 11 · Python 3.12 · Claude Code · codex
+    validations:
+      required: true
+  - type: checkboxes
+    id: dryrun
+    attributes:
+      label: Caretaker runs
+      options:
+        - label: I ran the organizer / Librarian with `--dry-run` first and the report is attached or summarized above
