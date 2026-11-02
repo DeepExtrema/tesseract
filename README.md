@@ -144,7 +144,7 @@ The CLI exits non-zero when any step failed, so a scheduler can alert on it.
 | **Graph cleanup** | Retracts mentions of deleted notes, repairs dangling relations and merge-stub chains, and prunes caches. The Librarian only proposes entity retirements; `cleanup --apply-retirements` applies them. |
 | **Consolidation** | Finds duplicate entities with an LLM pass. Dry-run by default; the Librarian only ever proposes merges. |
 | **Recall harness** | Claude Code skills that turn the vault into memory you can question. See [Skills](#skills). |
-| **Provisioning** | One command installs a pinned set of 14 Obsidian plugins, seeds settings, and installs the `Claude/` conventions tree. `--check` reports drift. |
+| **Provisioning** | One command installs a pinned set of 14 Obsidian plugins, seeds settings, and installs the `Claude/` conventions tree. Every plugin asset is checked against a reviewed SHA-256 lock before anything is written ([bumping a pin](docs/PLUGIN_LOCK.md)). `--check` reports drift. |
 | **Session hooks** | A SessionStart hook injects project recall into new Claude Code sessions; a Stop hook nudges `log_session` after significant work. Both fail silent. |
 
 ### Skills

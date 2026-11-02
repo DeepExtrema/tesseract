@@ -19,6 +19,7 @@
 - `vault-template/plugins.json` pins Obsidian plugins; `provision.py` auto-enables every successfully installed pin (`[s.id for s in specs if s.id not in errors]`).
 - On Windows, `mcp_sync` resolves the `claude` CLI via `shutil.which` (injectable in tests) so npm's `claude.cmd` shim is found.
 - Obsidian plugin pins must use release tags whose manifest version matches the tag (avoids provision idempotency drift and LiveSync churn).
+- Every pin's `sha256` lock must cover each asset its release ships; a pin bump updates the lock per `docs/PLUGIN_LOCK.md` (independently computed digests, cross-checked against GitHub's published digest when present).
 - (Migrated 2026-07-09 from the retired Sentinal-ESG workspace, where early tesseract work happened.)
 
 ## MCP server rule: no lazy heavy imports in tool bodies
