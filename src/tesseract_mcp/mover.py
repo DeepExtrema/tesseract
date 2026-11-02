@@ -76,7 +76,15 @@ def _plan_rewrites(
     return plans
 
 
-def move_note(vault: Vault, old_rel: str, new_rel: str) -> dict:
+class ProtectedLinkError(VaultError):
+    """The move would rewrite links inside notes the caller protects."""
+
+    def __init__(self, paths: list[str]):
+        self.paths = paths
+        super().__init__("move would edit protected notes: " + ", ".join(paths))
+
+
+def move_note(vault: Vault, old_rel: str, new_rel: str, protect=None) -> dict:
     """Move a note and rewrite its inbound path-qualified links, all or
     nothing: links are planned in memory, the file moves first, then the
     rewrites land; any failure restores every touched file and moves the
@@ -89,6 +97,10 @@ def move_note(vault: Vault, old_rel: str, new_rel: str) -> dict:
     if dst.exists():
         raise VaultError(f"Cannot move: destination exists: {new_rel}")
     plans = _plan_rewrites(vault, old_rel, new_rel)
+    if protect is not None:
+        blocked = [rel for _p, rel, *_ in plans if protect(rel)]
+        if blocked:
+            raise ProtectedLinkError(blocked)  # nothing touched yet
     _move_file(src, dst)
     written: list[tuple[Path, bytes]] = []
     try:

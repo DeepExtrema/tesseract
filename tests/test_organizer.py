@@ -279,3 +279,29 @@ def test_organizer_skips_sheet_folders(org_vault, tmp_path):
     vault = Vault(tmp_path)
     assert all("Records/" not in c for c in iter_candidates(vault))
     assert "Records" not in discover_taxonomy(vault)
+
+
+def _sheet_linking_loose_note(org_vault):
+    folder = org_vault.root / "Records"
+    folder.mkdir()
+    (folder / "_schema.md").write_text(
+        "---\nsheet: things\nfilename: \"{name}\"\nkey: [name]\n"
+        "columns:\n  name: {type: string}\n---\n", encoding="utf-8")
+    row = folder / "Row.md"
+    row.write_text("---\nname: Row\n---\n\nSee [[Loose Space Note]].\n",
+                   encoding="utf-8")
+    return row
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_move_that_would_edit_a_sheet_row_becomes_a_proposal(org_vault, apply):
+    """Sheet rows change only through sheet_upsert; the mover must not
+    rewrite links inside them."""
+    row = _sheet_linking_loose_note(org_vault)
+    before = row.read_bytes()
+    report = run_sweep(org_vault, ClusterEmbedder(), apply=apply)
+    assert not any(m["from"] == "Loose Space Note.md" for m in report["moved"])
+    prop = [p for p in report["proposals"] if p["path"] == "Loose Space Note.md"]
+    assert prop and prop[0]["reason"].startswith("linked from sheet rows")
+    assert (org_vault.root / "Loose Space Note.md").is_file()
+    assert row.read_bytes() == before

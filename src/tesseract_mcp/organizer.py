@@ -18,7 +18,14 @@ from . import cache, indexer
 from . import embeddings as embeddings_mod
 from . import sheets
 from .embeddings import cosine
-from .mover import _move_file, duplicate_stem_exists, move_note, reverse_rewrites
+from .mover import (
+    ProtectedLinkError,
+    _move_file,
+    _plan_rewrites,
+    duplicate_stem_exists,
+    move_note,
+    reverse_rewrites,
+)
 from .search import parse_frontmatter
 from .vault import Vault, VaultError
 
@@ -53,6 +60,12 @@ def _in_sheet_folder(vault: Vault, rel: str) -> bool:
     if len(parts) < 2:
         return False
     return sheets.is_sheet_folder(vault, "/".join(parts[:-1]))
+
+
+def sheet_rows_linking(vault: Vault, rel: str, target_rel: str) -> list[str]:
+    """Sheet-row notes whose links a move of rel would rewrite."""
+    return [r for _p, r, *_ in _plan_rewrites(vault, rel, target_rel)
+            if _in_sheet_folder(vault, r)]
 
 
 def _wants_organizing(vault: Vault, rel: str) -> bool:
@@ -248,8 +261,32 @@ def run_sweep(
             continue
         stem_name = rel.rsplit("/", 1)[-1]
         target_rel = f"{cls.folder}/{stem_name}"
+        if not apply:
+            # dry-run must report what apply would do, protection included
+            rows = sheet_rows_linking(vault, rel, target_rel)
+            if rows:
+                proposals.append({
+                    "path": rel, "suggested": cls.folder,
+                    "share": round(cls.share, 3),
+                    "neighbors": cls.neighbors[:3],
+                    "reason": "linked from sheet rows: " + ", ".join(rows[:3]),
+                })
+                continue
         if apply:
-            record = move_note(vault, rel, target_rel)
+            try:
+                # sheet rows change only through sheet_upsert (constitution →
+                # Sheets; roadmap: sheets are invisible to the mover), so a
+                # move that would rewrite a link inside one goes to a human
+                record = move_note(vault, rel, target_rel,
+                                   protect=lambda r: _in_sheet_folder(vault, r))
+            except ProtectedLinkError as e:
+                proposals.append({
+                    "path": rel, "suggested": cls.folder,
+                    "share": round(cls.share, 3),
+                    "neighbors": cls.neighbors[:3],
+                    "reason": "linked from sheet rows: " + ", ".join(e.paths[:3]),
+                })
+                continue
             record_move(vault, record, share=cls.share, neighbors=cls.neighbors[:3])
         moved.append({
             "from": rel, "to_folder": cls.folder,

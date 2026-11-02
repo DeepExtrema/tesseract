@@ -139,3 +139,12 @@ def test_self_link_travels_with_the_note(mv_vault):
     assert not (mv_vault.root / "Telemetry.md").exists()
     moved = mv_vault.read("02 - Space/Telemetry.md")
     assert "[[02 - Space/Telemetry#Top]]" in moved
+
+
+def test_protected_rewrite_refuses_before_touching_anything(mv_vault):
+    before = _snapshot(mv_vault.root)
+    with pytest.raises(mover.ProtectedLinkError) as exc:
+        move_note(mv_vault, "Telemetry.md", "02 - Space/Telemetry.md",
+                  protect=lambda rel: rel.startswith("Claude/"))
+    assert exc.value.paths == ["Claude/Graph/Topics/Telemetry Topic.md"]
+    assert _snapshot(mv_vault.root) == before
