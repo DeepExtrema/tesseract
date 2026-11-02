@@ -564,10 +564,23 @@ def main() -> None:
     parser.add_argument("--auto-cleanup", action="store_true",
                         help="apply mechanical graph repairs during the sweep "
                              "(default: report them; also TESSERACT_AUTO_CLEANUP=1)")
+    parser.add_argument("--confirm-first-run", action="store_true",
+                        help="allow the first applying sweep on a vault that "
+                             "has never had one (run --dry-run and review it first)")
     args = parser.parse_args()
     if args.max_moves is not None and args.max_moves < 0:
         parser.error("--max-moves must be >= 0")
-    result = run_sweep(Vault(args.vault), apply=not args.dry_run,
+    vault = Vault(args.vault)
+    if (not args.dry_run and not args.confirm_first_run
+            and not state_path(vault).exists()):
+        # standing rule (organizer + ops-hardening specs): the first live
+        # sweep must be a reviewed dry-run. A dry-run writes nothing, so the
+        # missing state file is the signal that no sweep has ever applied.
+        parser.error(
+            "no Librarian sweep has run on this vault yet. Run it with "
+            "--dry-run, review the report, then run once by hand with "
+            "--confirm-first-run before scheduling it.")
+    result = run_sweep(vault, apply=not args.dry_run,
                        max_moves=args.max_moves,
                        auto_cleanup=True if args.auto_cleanup else None)
     if args.dry_run:

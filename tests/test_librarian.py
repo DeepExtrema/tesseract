@@ -710,3 +710,39 @@ def test_cli_auto_cleanup_flag_passes_through(vault_dir, monkeypatch):
     monkeypatch.setattr(librarian, "format_report", lambda r, now: "")
     librarian.main()
     assert seen["auto_cleanup"] is True
+
+
+def test_cli_first_apply_sweep_needs_confirmation(vault_dir, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["librarian", str(vault_dir)])
+    with pytest.raises(SystemExit) as exc:
+        librarian.main()
+    assert exc.value.code == 2  # argparse error: nothing ran
+    assert not (vault_dir / "Claude" / "Librarian.md").exists()
+
+
+def test_cli_first_apply_sweep_runs_when_confirmed(vault_dir, monkeypatch):
+    seen = {}
+
+    def fake_sweep(vault, apply, max_moves, auto_cleanup):
+        seen["apply"] = apply
+        return {"steps": {}, "health": {}, "errors": {}, "applied": apply}
+
+    monkeypatch.setattr(librarian, "run_sweep", fake_sweep)
+    monkeypatch.setattr(sys, "argv", ["librarian", str(vault_dir),
+                                      "--confirm-first-run"])
+    librarian.main()
+    assert seen["apply"] is True
+
+
+def test_cli_later_apply_sweeps_need_no_flag(vault, vault_dir, monkeypatch):
+    librarian.save_state(vault, librarian.load_state(vault))  # a sweep has run
+    seen = {}
+
+    def fake_sweep(vault, apply, max_moves, auto_cleanup):
+        seen["apply"] = apply
+        return {"steps": {}, "health": {}, "errors": {}, "applied": apply}
+
+    monkeypatch.setattr(librarian, "run_sweep", fake_sweep)
+    monkeypatch.setattr(sys, "argv", ["librarian", str(vault_dir)])
+    librarian.main()
+    assert seen["apply"] is True

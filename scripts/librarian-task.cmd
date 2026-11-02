@@ -1,6 +1,8 @@
 @echo off
 rem Daily tesseract Librarian sweep (created 2026-07-11, M0 ops hardening).
 rem Remove with: schtasks /delete /tn tesseract-librarian /f
+rem Before scheduling: run once with --dry-run, review, then once with
+rem --confirm-first-run. A never-swept vault refuses an applying run.
 rem codex preferred once quota returns (2026-08-10); claude until then.
 set TESSERACT_EXTRACTOR=claude
 rem unattended extraction reads clipped web content: run the CLI with no tools
