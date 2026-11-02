@@ -27,6 +27,7 @@ def _fake_repo(tmp_path: Path) -> Path:
     stub.write_text(
         "#!/bin/bash\n"
         'echo "HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-unset}" >> "$STUB_LOG"\n'
+        'echo "NO_TOOLS=${TESSERACT_EXTRACTOR_NO_TOOLS:-unset}" >> "$STUB_LOG.env"\n'
         'echo \'{"remaining": 0}\'\n'
     )
     stub.chmod(0o755)
@@ -106,3 +107,17 @@ def test_live_lock_holder_is_respected(tmp_path):
     assert "skipping" in r.stdout
     assert _stub_calls(tmp_path) == []
     assert lock.exists()
+
+
+def test_extraction_runs_tool_less_by_default(tmp_path):
+    repo = _fake_repo(tmp_path)
+    r = _run(repo, tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (tmp_path / "stub.log.env").read_text().split() == ["NO_TOOLS=1"]
+
+
+def test_extraction_tool_less_default_can_be_overridden(tmp_path):
+    repo = _fake_repo(tmp_path)
+    r = _run(repo, tmp_path, TESSERACT_EXTRACTOR_NO_TOOLS="0")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (tmp_path / "stub.log.env").read_text().split() == ["NO_TOOLS=0"]

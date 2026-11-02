@@ -385,14 +385,14 @@ tests/               pytest suite
 
 ### Opt-in hardening
 
-Off by default. Leaving them unset keeps scheduled sweeps and the full tool
-set exactly as they are.
+Off by default in the code. The scheduled entry points turn tool-less
+extraction on, because unattended sweeps read clipped web content.
 
 | Knob | Effect |
 |---|---|
 | `librarian --max-moves N` | Caps organizer moves per sweep; confident moves past the cap are skipped and re-evaluated next sweep (`0` = file nothing) |
 | `TESSERACT_READONLY=1` | MCP server registers only read tools; `log_session`, `capture`, `upsert_concept`, `write_note`, `add_task`, `sheet_upsert`, `index_brain`, `consolidate_graph`, `organize_vault`, `undo_move` are absent |
-| `TESSERACT_EXTRACTOR_NO_TOOLS=1` | Extractor CLI runs with no tools (`claude --tools ""`, `codex exec --sandbox read-only`), so instructions inside note text cannot act during extraction |
+| `TESSERACT_EXTRACTOR_NO_TOOLS=1` | Extractor CLI runs with no tools (`claude --tools "" --strict-mcp-config`, `codex exec --sandbox read-only`), so instructions inside note text cannot act during extraction. The shipped schedules (`librarian-task.cmd`, both launchd templates via `index-nightly.sh` or the plist) set it; MCP `index_brain` calls still follow your environment |
 
 ## Going deeper
 

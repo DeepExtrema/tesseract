@@ -10,6 +10,9 @@ VAULT="${1:?usage: index-nightly.sh <vault> [state-dir]}"
 [ -n "${2:-}" ] && export TESSERACT_STATE_DIR="$2"
 export TESSERACT_VAULT_PATH="$VAULT"
 export TESSERACT_EXTRACTOR="${TESSERACT_EXTRACTOR:-claude}"
+# unattended extraction reads clipped web content: no CLI tools unless the
+# caller explicitly exports TESSERACT_EXTRACTOR_NO_TOOLS=0
+export TESSERACT_EXTRACTOR_NO_TOOLS="${TESSERACT_EXTRACTOR_NO_TOOLS:-1}"
 # HF_HUB_OFFLINE is deliberately not forced: the indexer embeds notes with
 # bge-micro-v2, and on a machine that never downloaded it an offline run fails
 # every night. Set HF_HUB_OFFLINE=1 yourself once the model is cached.

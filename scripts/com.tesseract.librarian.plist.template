@@ -20,6 +20,8 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>TESSERACT_EXTRACTOR</key><string>claude</string>
+    <!-- unattended extraction reads clipped web content: run the CLI with no tools -->
+    <key>TESSERACT_EXTRACTOR_NO_TOOLS</key><string>1</string>
     <key>PATH</key><string>{HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>StartCalendarInterval</key>

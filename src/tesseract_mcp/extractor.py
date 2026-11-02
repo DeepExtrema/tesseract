@@ -148,8 +148,14 @@ class CliExtractor:
             cmd += ["--model", self.model]
         if os.environ.get("TESSERACT_EXTRACTOR_NO_TOOLS", "").strip().lower() in _TRUTHY:
             # extraction only needs a JSON reply; deny the CLI every tool so
-            # instructions embedded in note text cannot act
-            cmd += ["--tools", ""] if self.backend == "claude" else ["--sandbox", "read-only"]
+            # instructions embedded in note text cannot act. --tools "" only
+            # covers built-in tools; --strict-mcp-config with no --mcp-config
+            # also keeps the user's MCP servers (tesseract's own write tools
+            # among them) out of the extraction session.
+            if self.backend == "claude":
+                cmd += ["--tools", "", "--strict-mcp-config"]
+            else:
+                cmd += ["--sandbox", "read-only"]
         return cmd
 
     def _invoke(self, prompt: str) -> str:
