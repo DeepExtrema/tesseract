@@ -83,3 +83,54 @@ def test_stale_notes_does_not_write(vault, vault_dir, tmp_path):
     state.mkdir()
     stale_notes(vault, state)
     assert not (state / "fallback_embeddings.json").exists()
+
+
+def test_load_vector_cache_memo_tracks_disk_changes(tmp_path):
+    from tesseract_mcp.embeddings import load_vector_cache, save_vector_cache
+
+    p = tmp_path / "vecs.json"
+    save_vector_cache(p, {"a": {"hash": "h1", "vec": [1.0]}})
+    assert load_vector_cache(p) == {"a": {"hash": "h1", "vec": [1.0]}}
+    # a repeat load returns the memoized parse (same content)
+    assert load_vector_cache(p)["a"]["hash"] == "h1"
+    # an out-of-process rewrite (new stamp) must be picked up
+    p.write_text('{"a": {"hash": "h2", "vec": [2.0]}}', encoding="utf-8")
+    assert load_vector_cache(p)["a"]["hash"] == "h2"
+
+
+def test_load_vector_cache_corrupt_returns_empty(tmp_path):
+    from tesseract_mcp.embeddings import load_vector_cache
+
+    p = tmp_path / "vecs.json"
+    p.write_text("{ truncated", encoding="utf-8")
+    assert load_vector_cache(p) == {}
+
+
+def test_load_vector_cache_mutation_does_not_leak_into_memo(tmp_path):
+    from tesseract_mcp.embeddings import load_vector_cache, save_vector_cache
+
+    p = tmp_path / "vecs.json"
+    save_vector_cache(p, {"a": {"hash": "h1", "vec": [1.0]}})
+    # callers mutate the loaded dict before saving; if that save never lands
+    # (crash, locked file), the next load must still reflect what's on disk
+    loaded = load_vector_cache(p)
+    loaded["b"] = {"hash": "h2", "vec": [2.0]}
+    del loaded["a"]
+    assert load_vector_cache(p) == {"a": {"hash": "h1", "vec": [1.0]}}
+
+
+def test_save_vector_cache_failed_replace_keeps_old_file_and_no_temp(tmp_path, monkeypatch):
+    import pytest
+    from tesseract_mcp import embeddings as emb
+
+    p = tmp_path / "vecs.json"
+    emb.save_vector_cache(p, {"a": {"hash": "h1", "vec": [1.0]}})
+
+    def locked(src, dst):
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(emb.os, "replace", locked)
+    with pytest.raises(PermissionError):
+        emb.save_vector_cache(p, {"b": {"hash": "h2", "vec": [2.0]}})
+    assert [f.name for f in tmp_path.iterdir()] == ["vecs.json"]
+    assert emb.load_vector_cache(p) == {"a": {"hash": "h1", "vec": [1.0]}}
