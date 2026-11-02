@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- macOS equivalent of scripts/librarian-task.cmd (Windows Task Scheduler).
+     It already indexes, so don't also install com.tesseract.index.
      Replace {REPO}, {VAULT}, {HOME}; then:
        cp this-file ~/Library/LaunchAgents/com.tesseract.librarian.plist
        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tesseract.librarian.plist

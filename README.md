@@ -166,8 +166,8 @@ Installed with `python -m tesseract_mcp.skill_sync` from [`skills/`](skills/).
 ## Quickstart
 
 Requirements: Python 3.11+, an Obsidian vault, and the `claude` or `codex`
-CLI on `PATH` for entity extraction. The commands below use the Windows
-layout the repo currently targets (`.venv\Scripts\`).
+CLI on `PATH` for entity extraction. Windows commands come first; the
+[macOS / Linux](#macos--linux) steps follow.
 
 ```powershell
 git clone https://github.com/DeepExtrema/tesseract-mcp
@@ -196,6 +196,27 @@ $env:TESSERACT_VAULT_PATH = "<path-to-vault>"
 Then open the vault once in Obsidian (disable Restricted Mode, finish LiveSync
 setup) and call the `index_brain` tool to build the graph.
 
+### macOS / Linux
+
+Same flow with the POSIX venv layout (`.venv/bin/`):
+
+```bash
+git clone https://github.com/DeepExtrema/tesseract-mcp
+cd tesseract-mcp
+python3 -m venv .venv
+.venv/bin/pip install -e .
+.venv/bin/python -m tesseract_mcp.provision <path-to-vault>
+export TESSERACT_VAULT_PATH="<path-to-vault>"
+.venv/bin/python -m tesseract_mcp.mcp_sync --check   # preview
+.venv/bin/python -m tesseract_mcp.mcp_sync           # apply
+```
+
+`mcp_sync` and `hook_sync` pick the right venv binary on every OS. Set
+`TESSERACT_VAULT_PATH` wherever the hooks run too: their built-in default
+is the Windows path `C:\Vaults\Tesseract`. If the vault is already synced
+another way (iCloud Drive, for example), skip LiveSync rather than running two
+syncs on one vault.
+
 ## MCP client configuration
 
 The server is a stdio process started by the `tesseract-mcp` console script.
@@ -220,7 +241,8 @@ claude mcp add --scope user tesseract -e TESSERACT_VAULT_PATH=C:\Vaults\Tesserac
 }
 ```
 
-Any MCP client that can launch a stdio server works the same way. In a new
+On macOS and Linux the command is `<repo>/.venv/bin/tesseract-mcp`. Any MCP
+client that can launch a stdio server works the same way. In a new
 session, call `onboard` first.
 
 ## Tool reference
@@ -266,6 +288,7 @@ unless a call explicitly confirms otherwise.
 | `TESSERACT_EXTRACT_MODEL` | `haiku` | Per-note extraction model (`claude` backend only) |
 | `TESSERACT_CONSOLIDATE_MODEL` | `sonnet` | Consolidation model (`claude` backend only) |
 | `CLAUDE_SETTINGS_PATH` | `~/.claude/settings.json` | Settings file `hook_sync` writes hooks into |
+| `TESSERACT_OWNER` | `the vault owner` | Owner name written into new vault-root `AGENTS.md` and `CLAUDE.md`; existing guides are never rewritten |
 
 `mcp-servers.json` is the curated server manifest and
 `vault-template/plugins.json` pins the Obsidian plugin versions.
@@ -294,6 +317,21 @@ These run outside the MCP server and are never exposed as tools.
 > report before scheduling unattended runs. Dry-run writes no state, moves,
 > report or throttle baselines. `scripts/librarian-task.cmd` is the Windows
 > Task Scheduler entry point.
+
+On macOS, schedule with launchd instead. Each template says how to install
+and remove it. Install one of the two, not both:
+
+| Template | Runs |
+|---|---|
+| `scripts/com.tesseract.librarian.plist.template` | The full Librarian sweep daily at 04:00 (includes indexing) |
+| `scripts/com.tesseract.index.plist.template` | `scripts/index-nightly.sh` at 04:30: incremental indexing only, no file moves |
+
+> **macOS privacy:** a launchd job can't read a vault in iCloud Drive
+> (`~/Library/Mobile Documents/`) or another protected folder unless the
+> program launchd starts (`/bin/bash`, or the venv `python`) has Full Disk
+> Access in System Settings > Privacy & Security. Without it,
+> `index-nightly.sh` exits with `cannot read vault`. Grant it deliberately,
+> or keep the vault outside protected folders.
 
 ### Trust boundaries
 

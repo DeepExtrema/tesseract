@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Nightly incremental graph index only (no organizer / no file moves).
+     Alternative to com.tesseract.librarian, which already indexes: install one.
      Replace {REPO}, {VAULT}, {HOME}; then:
        cp this-file ~/Library/LaunchAgents/com.tesseract.index.plist
        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tesseract.index.plist

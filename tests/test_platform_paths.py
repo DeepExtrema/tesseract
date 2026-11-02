@@ -17,3 +17,10 @@ def test_shipped_manifest_resolves_to_platform_console_script(tmp_path):
     spec = next(s for s in load_manifest(manifest) if s.name == "tesseract")
     out = resolve(spec, repo_root=tmp_path, vault="vault")
     assert out.command == str(platform_paths.venv_script(tmp_path, "tesseract-mcp"))
+
+
+def test_shipped_manifest_has_no_hardcoded_windows_paths():
+    # From #10 (Harvey Chowdhury): the manifest must use {TESSERACT_BIN}, not a
+    # Windows venv path, so mcp_sync resolves the right binary on every OS.
+    manifest = (Path(__file__).resolve().parent.parent / "mcp-servers.json").read_text(encoding="utf-8")
+    assert "Scripts" not in manifest
