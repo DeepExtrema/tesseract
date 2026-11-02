@@ -6,7 +6,7 @@
 
 ## Checklist
 
-- [ ] Base branch is `codex/architecture-roadmap`
+- [ ] Base branch is `main`
 - [ ] `python -m pytest -q` passes locally
 - [ ] Markdown stays authoritative: anything new the server derives is rebuildable from the vault
 - [ ] No lazy `numpy` / `torch` / `sentence-transformers` import inside a tool body (`scripts/probe_server.py` still passes)

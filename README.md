@@ -4,8 +4,9 @@
 
 **Persistent, shared memory for AI agents, living in a plain-markdown Obsidian vault.**
 
-[![CI](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/ci.yml/badge.svg?branch=codex/architecture-roadmap)](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/ci.yml)
-[![Cross-platform](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/cross-platform.yml/badge.svg?branch=codex/architecture-roadmap)](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/cross-platform.yml)
+[![CI](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/ci.yml)
+[![Cross-platform](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/cross-platform.yml/badge.svg?branch=main)](https://github.com/DeepExtrema/tesseract-mcp/actions/workflows/cross-platform.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![MCP server](https://img.shields.io/badge/MCP-FastMCP%20server-6E56CF)](https://modelcontextprotocol.io)
 [![Obsidian](https://img.shields.io/badge/Obsidian-vault-7C3AED?logo=obsidian&logoColor=white)](https://obsidian.md)
@@ -415,7 +416,7 @@ tests/               pytest suite
 .venv\Scripts\python -m pytest -q
 ```
 
-- Base branch is `codex/architecture-roadmap`. Open PRs against it; CI runs the full suite on every PR ([`ci.yml`](.github/workflows/ci.yml)).
+- Base branch is `main`. Open PRs against it; CI runs the full suite on every PR ([`ci.yml`](.github/workflows/ci.yml)).
 - Keep markdown authoritative: anything the server derives must be rebuildable from the vault.
 - Never import numpy, torch or sentence-transformers lazily inside a tool body. Warm them at startup (`server._warm_start()`); see the appendix in [ARCHITECTURE.md](docs/ARCHITECTURE.md). Verify with `python scripts/probe_server.py`.
 - Eval thresholds live in `tests/test_evals.py`. If the baseline drops below a floor, fix the fixture or golden set; never lower the floor.
@@ -442,4 +443,4 @@ extraction on, because unattended sweeps read clipped web content.
 
 ## License
 
-No license file has been added yet, so all rights are reserved by default.
+[MIT](LICENSE).

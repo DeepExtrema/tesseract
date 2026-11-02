@@ -3,7 +3,7 @@ name: Cross-platform tests
 on:
   pull_request:
   push:
-    branches: [codex/architecture-roadmap]
+    branches: [main]
 
 permissions:
   contents: read
