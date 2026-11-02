@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime
 
 import yaml
 
-from .vault import Vault
+from .vault import NoteExists, Vault
 
 AGENT_NAME = "claude"
+AGENT_ENV = "TESSERACT_AGENT_NAME"
 _ILLEGAL = re.compile(r'[\\/:*?"<>|\[\]#^]')
 _WHITESPACE = re.compile(r"\s+")
 
@@ -20,17 +22,27 @@ def safe_filename(title: str) -> str:
     return cleaned or "untitled"
 
 
+def agent_name() -> str:
+    """Identity stamped on notes this server instance writes.
+
+    Each agent runs its own server instance, so identity is per instance:
+    set TESSERACT_AGENT_NAME and every note it creates is attributed to that
+    agent instead of the default "claude"."""
+    name = os.environ.get(AGENT_ENV, "").strip()
+    return safe_filename(name) if name else AGENT_NAME
+
+
 def make_frontmatter(
     *,
     project: str = "",
     tags: list[str] | None = None,
-    agent: str = AGENT_NAME,
+    agent: str | None = None,
     created: datetime | None = None,
 ) -> str:
     created = created or datetime.now()
     meta = {
         "created": created.strftime("%Y-%m-%d %H:%M"),
-        "agent": agent,
+        "agent": agent or agent_name(),
         "project": project,
         "tags": tags or [],
     }
@@ -48,14 +60,22 @@ def log_session(
     now = now or datetime.now()
     base = f"{now:%Y-%m-%d} {safe_filename(title)}"
     stem, n = base, 2
-    while vault.resolve(f"Claude/Sessions/{stem}.md").exists():
-        stem = f"{base} {n}"
-        n += 1
-    rel = f"Claude/Sessions/{stem}.md"
-    vault.write(
-        rel,
-        make_frontmatter(project=project, tags=tags, created=now) + content + "\n",
-    )
+    while True:
+        rel = f"Claude/Sessions/{stem}.md"
+        try:
+            # Create-only and atomic: if another agent logs the same title at
+            # the same moment, one of us gets the next free suffix instead of
+            # the earlier note being overwritten.
+            vault.write(
+                rel,
+                make_frontmatter(project=project, tags=tags, created=now)
+                + content
+                + "\n",
+            )
+            break
+        except NoteExists:
+            stem = f"{base} {n}"
+            n += 1
     vault.append("Claude/Index.md", f"- [[{stem}]] — {project}: {title}\n")
     return rel
 
@@ -85,11 +105,18 @@ def upsert_concept(
     existing = _find_concept(vault, filename)
     if existing is None:
         rel = f"Claude/Concepts/{filename}"
-        vault.write(
-            rel,
-            make_frontmatter(tags=["concept"], created=now)
-            + f"# {name}\n\n{content}\n",
-        )
-        return rel
-    vault.append(existing, f"\n## Update {now:%Y-%m-%d}\n\n{content}\n")
+        try:
+            vault.write(
+                rel,
+                make_frontmatter(tags=["concept"], created=now)
+                + f"# {name}\n\n{content}\n",
+            )
+            return rel
+        except NoteExists:
+            # Another agent created the concept between our lookup and our
+            # write: extend theirs rather than fail or overwrite it.
+            return upsert_concept(vault, name, content, now)
+    by = agent_name()
+    heading = f"## Update {now:%Y-%m-%d}" + (f" ({by})" if by != AGENT_NAME else "")
+    vault.append(existing, f"\n{heading}\n\n{content}\n")
     return existing

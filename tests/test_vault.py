@@ -134,9 +134,10 @@ def test_append_preserves_lf_line_endings_on_windows(vault):
 def test_write_retries_transient_windows_lock(vault, monkeypatch):
     # Obsidian/LiveSync briefly lock notes; os.replace then raises
     # PermissionError (WinError 5). Two transient failures must not crash.
+    # A create-only write publishes via os.link; overwrite uses os.replace.
     import os as os_mod
     from tesseract_mcp import vault as vault_mod
-    real_replace = os_mod.replace
+    real_replace = os_mod.link
     calls = {"n": 0}
 
     def flaky(src, dst):
@@ -145,7 +146,7 @@ def test_write_retries_transient_windows_lock(vault, monkeypatch):
             raise PermissionError(5, "Access is denied")
         return real_replace(src, dst)
 
-    monkeypatch.setattr(vault_mod.os, "replace", flaky)
+    monkeypatch.setattr(vault_mod.os, "link", flaky)
     monkeypatch.setattr(vault_mod.time, "sleep", lambda s: None)
     vault.write("Claude/Inbox/lock-test.md", "content")
     assert calls["n"] == 3
@@ -154,7 +155,7 @@ def test_write_retries_transient_windows_lock(vault, monkeypatch):
 
 def test_write_gives_up_after_persistent_lock(vault, monkeypatch):
     from tesseract_mcp import vault as vault_mod
-    monkeypatch.setattr(vault_mod.os, "replace",
+    monkeypatch.setattr(vault_mod.os, "link",
                         lambda s, d: (_ for _ in ()).throw(
                             PermissionError(5, "Access is denied")))
     monkeypatch.setattr(vault_mod.time, "sleep", lambda s: None)

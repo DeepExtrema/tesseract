@@ -9,12 +9,17 @@ Two rules are enforced in code, not by convention:
 from __future__ import annotations
 
 import os
+import secrets
 import time
 from pathlib import Path
 
 
 class VaultError(Exception):
     """Raised when a vault operation is invalid."""
+
+
+class NoteExists(VaultError):
+    """A create-only write lost the race to (or collided with) an existing note."""
 
 
 def _retry_locked(fn):
@@ -82,17 +87,44 @@ class Vault:
         if path.is_dir():
             raise VaultError(f"'{relative}' is a directory, not a note.")
         if path.exists() and not overwrite:
-            raise VaultError(
+            raise NoteExists(
                 f"'{relative}' already exists. Pass overwrite=True to replace it."
             )
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp-write")
+        # Unique temp name: several agents may write into the same folder at
+        # once, and a shared temp name would let one agent's bytes land in
+        # another agent's note.
+        tmp = path.with_name(f"{path.name}.{os.getpid()}-{secrets.token_hex(4)}.tmp-write")
         # newline="\n": Path.write_text's default newline translation
         # rewrites every LF in `content` as the platform line ending, so on
         # Windows the first patch of a pre-existing LF file silently
         # rewrites every line as CRLF. Force LF regardless of platform.
         tmp.write_text(content, encoding="utf-8", newline="\n")
-        _retry_locked(lambda: os.replace(tmp, path))
+        try:
+            if overwrite:
+                _retry_locked(lambda: os.replace(tmp, path))
+            else:
+                # Create-only must be atomic. The exists() check above is only
+                # a fast path: two agents can both pass it, and os.replace
+                # would then silently clobber whichever landed first. A hard
+                # link fails if the target exists, so exactly one writer wins.
+                try:
+                    _retry_locked(lambda: os.link(tmp, path))
+                except FileExistsError:
+                    raise NoteExists(
+                        f"'{relative}' already exists. Pass overwrite=True to replace it."
+                    ) from None
+                except PermissionError:
+                    raise  # a persistent lock is an error, not "no hard links"
+                except OSError:
+                    # Filesystem without hard links: best effort, never lose data.
+                    if path.exists():
+                        raise NoteExists(
+                            f"'{relative}' already exists. Pass overwrite=True to replace it."
+                        ) from None
+                    _retry_locked(lambda: os.replace(tmp, path))
+        finally:
+            tmp.unlink(missing_ok=True)
         return path
 
     def append(
