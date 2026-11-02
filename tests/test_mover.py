@@ -1,6 +1,7 @@
 import pytest
 
 from tesseract_mcp import indexer
+from tesseract_mcp import mover
 from tesseract_mcp.mover import duplicate_stem_exists, move_note, reverse_rewrites
 from tesseract_mcp.vault import Vault
 
@@ -85,3 +86,65 @@ def test_reverse_rewrites_restores_links(mv_vault):
     )
     assert "[[Telemetry]]" in mv_vault.read("02 - Space/Research.md")
     assert "[[02 - Space/Telemetry]]" not in mv_vault.read("02 - Space/Research.md")
+
+
+def _snapshot(root):
+    return {p: p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+def test_failed_file_move_leaves_every_link_untouched(mv_vault, monkeypatch):
+    """The move used to rewrite inbound links first; a locked file then
+    failed the move and left links pointing at a path the note never
+    reached, with no journal entry to undo."""
+    before = _snapshot(mv_vault.root)
+
+    def locked(src, dst):
+        raise PermissionError("WinError 5: locked by sync")
+
+    monkeypatch.setattr(mover, "_move_file", locked)
+    with pytest.raises(PermissionError):
+        move_note(mv_vault, "Telemetry.md", "02 - Space/Telemetry.md")
+    assert _snapshot(mv_vault.root) == before
+
+
+def test_failed_rewrite_rolls_back_links_and_file(mv_vault, monkeypatch):
+    before = _snapshot(mv_vault.root)
+    real = mover._write_bytes
+    calls = {"n": 0}
+
+    def flaky(path, data):
+        calls["n"] += 1
+        if calls["n"] == 2:  # second rewrite fails mid-move
+            raise PermissionError("locked")
+        real(path, data)
+
+    monkeypatch.setattr(mover, "_write_bytes", flaky)
+    with pytest.raises(PermissionError):
+        move_note(mv_vault, "Telemetry.md", "02 - Space/Telemetry.md")
+    assert _snapshot(mv_vault.root) == before
+
+
+def test_rewrite_preserves_crlf_and_undecodable_bytes(mv_vault):
+    raw = b"See [[Telemetry]].\r\nLatin-1 byte: \xe9 stays.\r\n"
+    (mv_vault.root / "02 - Space" / "Legacy.md").write_bytes(raw)
+    move_note(mv_vault, "Telemetry.md", "02 - Space/Telemetry.md")
+    got = (mv_vault.root / "02 - Space" / "Legacy.md").read_bytes()
+    assert got == raw.replace(b"[[Telemetry]]", b"[[02 - Space/Telemetry]]")
+
+
+def test_self_link_travels_with_the_note(mv_vault):
+    (mv_vault.root / "Telemetry.md").write_text(
+        "root note, see [[Telemetry#Top]]\n", encoding="utf-8")
+    move_note(mv_vault, "Telemetry.md", "02 - Space/Telemetry.md")
+    assert not (mv_vault.root / "Telemetry.md").exists()
+    moved = mv_vault.read("02 - Space/Telemetry.md")
+    assert "[[02 - Space/Telemetry#Top]]" in moved
+
+
+def test_protected_rewrite_refuses_before_touching_anything(mv_vault):
+    before = _snapshot(mv_vault.root)
+    with pytest.raises(mover.ProtectedLinkError) as exc:
+        move_note(mv_vault, "Telemetry.md", "02 - Space/Telemetry.md",
+                  protect=lambda rel: rel.startswith("Claude/"))
+    assert exc.value.paths == ["Claude/Graph/Topics/Telemetry Topic.md"]
+    assert _snapshot(mv_vault.root) == before

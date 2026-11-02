@@ -104,6 +104,14 @@ def test_no_tools_env_denies_cli_tools(backend, isolation, monkeypatch):
     assert got[i:i + 2] == isolation
 
 
+def test_no_tools_claude_also_drops_user_mcp_servers(monkeypatch):
+    monkeypatch.setenv("TESSERACT_EXTRACTOR_NO_TOOLS", "1")
+    runner = make_runner([FakeProc(stdout=json.dumps(GOOD))])
+    CliExtractor(backend="claude", runner=runner, which=lambda n: n).extract("N.md", "c")
+    assert "--strict-mcp-config" in runner.calls[0]
+    assert "--mcp-config" not in runner.calls[0]
+
+
 def test_extract_parses_json_with_surrounding_prose():
     out = "Sure! Here is the JSON:\n" + json.dumps(GOOD) + "\nHope that helps."
     runner = make_runner([FakeProc(stdout=out)])

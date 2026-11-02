@@ -34,5 +34,6 @@ raw material should NOT be promoted.
      newer, not declared the winner.
 6. Report in chat: what was promoted into which concept, and what was
    left in the Inbox and why (the gate's verdict, one line each).
-7. Delete nothing and move nothing — captures stay where they are; the
-   organizer and Librarian own filing and cleanup.
+7. Delete nothing and move nothing — captures stay where they are. The
+   organizer never touches `Claude/`, so the Inbox changes only when
+   Taimoor prunes it.

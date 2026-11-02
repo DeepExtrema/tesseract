@@ -133,7 +133,10 @@ def get_note_vectors(
     state_root: Path,
     embedder: Embedder,
     note_texts: dict[str, str] | None = None,
+    persist: bool = True,
 ) -> dict[str, list[float]]:
+    """persist=False (dry-runs) embeds stale notes in memory but never
+    writes the fallback cache."""
     note_texts, fallback_cache, vectors, stale = _partition(
         vault, state_root, note_texts
     )
@@ -142,7 +145,8 @@ def get_note_vectors(
         for rel, vec in zip(stale, vecs):
             vectors[rel] = vec
             fallback_cache[rel] = {"hash": _content_hash(note_texts[rel]), "vec": vec}
-        save_vector_cache(_fallback_path(state_root), fallback_cache)
+        if persist:
+            save_vector_cache(_fallback_path(state_root), fallback_cache)
     return vectors
 
 

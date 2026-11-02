@@ -2,7 +2,8 @@
 # Nightly incremental graph index (macOS/Linux). Indexes only new/changed notes
 # into Claude/Graph/. Does NOT run the organizer, so no notes are ever moved.
 # The Librarian sweep already includes indexing: schedule this OR the
-# Librarian, not both (neither takes a lock against the other).
+# Librarian, not both. If both run, the indexer refuses while a sweep holds
+# the caretaker lock (state dir caretaker.lock) and the night is skipped.
 # Usage: scripts/index-nightly.sh <vault> [state-dir]
 set -u
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -10,6 +11,9 @@ VAULT="${1:?usage: index-nightly.sh <vault> [state-dir]}"
 [ -n "${2:-}" ] && export TESSERACT_STATE_DIR="$2"
 export TESSERACT_VAULT_PATH="$VAULT"
 export TESSERACT_EXTRACTOR="${TESSERACT_EXTRACTOR:-claude}"
+# unattended extraction reads clipped web content: no CLI tools unless the
+# caller explicitly exports TESSERACT_EXTRACTOR_NO_TOOLS=0
+export TESSERACT_EXTRACTOR_NO_TOOLS="${TESSERACT_EXTRACTOR_NO_TOOLS:-1}"
 # HF_HUB_OFFLINE is deliberately not forced: the indexer embeds notes with
 # bge-micro-v2, and on a machine that never downloaded it an offline run fails
 # every night. Set HF_HUB_OFFLINE=1 yourself once the model is cached.

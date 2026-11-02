@@ -1,6 +1,6 @@
 ---
 name: clip
-description: Use when Taimoor shares a URL, arXiv paper, or article to save — "clip this", "save this to the vault", "remember this page/paper". Compiles one external source into one cited note in Claude/Inbox/ with provenance; the Librarian indexes it and the organizer files it.
+description: Use when Taimoor shares a URL, arXiv paper, or article to save — "clip this", "save this to the vault", "remember this page/paper". Compiles one external source into one cited note in Claude/Inbox/ with provenance; the Librarian indexes it, and it stays in the Inbox until /distill graduates it.
 ---
 
 # Clip — compile one source into the vault
@@ -36,5 +36,6 @@ note, on request. Never writes outside `Claude/`.
    `tags: [clip]`, `type: clip`, `source: "<url or DOI>"`,
    `title: "<original title>"`.
 6. Do NOT propose graph entities inline — the extractor sweep owns
-   that. Do NOT file the note elsewhere — the organizer owns filing.
+   that. Do NOT file the note elsewhere — it stays in `Claude/Inbox/` (the organizer
+   never touches `Claude/`; `/distill` graduates what lasts).
 7. Show the compiled note in chat with a one-line "filed to" pointer.

@@ -10,6 +10,7 @@ from . import cache as cache_mod, consolidate as consolidate_mod, graph, hybrid,
 from .embeddings import SentenceTransformerEmbedder
 from .extractor import consolidation_extractor, extraction_extractor
 from .vault import Vault, VaultError
+from .locking import caretaker_lock
 
 INSTRUCTIONS = """Tesseract mind database: a shared Obsidian vault (markdown,
 LiveSync-synced) used as persistent memory by its human owner and their AI agents.
@@ -43,6 +44,27 @@ mcp = FastMCP("tesseract", instructions=INSTRUCTIONS)
 def _write_tool(fn):
     """Register a vault-mutating tool unless the read-only profile is on."""
     return fn if READONLY else mcp.tool()(fn)
+
+
+NO_TOOL_APPLY_ENV = "TESSERACT_NO_TOOL_APPLY"
+
+
+def _caretaker():
+    """Serialize with the Librarian sweep and the caretaker CLIs."""
+    return caretaker_lock(indexer.state_dir(get_vault().root))
+
+
+def _refuse_tool_apply(what: str, cli: str) -> None:
+    """Opt-in profile (TESSERACT_NO_TOOL_APPLY): keep the note-writing tools
+    but refuse the caretaker actions an agent could otherwise trigger on its
+    own — the plan keeps that autonomy in the scheduled sweep and the CLI.
+    Read at call time so one server config change takes effect."""
+    if os.environ.get(NO_TOOL_APPLY_ENV, "").strip().lower() in {"1", "true", "yes", "on"}:
+        raise VaultError(
+            f"{what} is disabled for MCP calls on this server "
+            f"({NO_TOOL_APPLY_ENV}). Ask the human to run `{cli}` "
+            "after reviewing the dry-run."
+        )
 
 
 _vault: Vault | None = None
@@ -137,6 +159,11 @@ def organize_vault(apply: bool = False) -> dict:
     apply=True executes moves (journaled to Claude/Organizer.md; reversible
     via undo_move). The scheduled CLI sweep is the autonomous path — see
     constitution → Organizer."""
+    if apply:
+        _refuse_tool_apply("organize_vault(apply=True)",
+                           "python -m tesseract_mcp.organize <vault>")
+        with _caretaker():
+            return organizer_mod.run_sweep(get_vault(), _get_embedder(), apply=True)
     return organizer_mod.run_sweep(get_vault(), _get_embedder(), apply=apply)
 
 
@@ -363,7 +390,11 @@ def index_brain(force: bool = False) -> dict:
     """Index new/changed vault notes into the semantic graph (LLM entity
     extraction via the configured CLI backend). Returns counts including
     'remaining' — call again if remaining > 0. force=True re-indexes all."""
-    return indexer.run(get_vault(), _make_extractor(), force=force)
+    if force:
+        _refuse_tool_apply("index_brain(force=True)",
+                           "python -m tesseract_mcp.indexer <vault> --force")
+    with _caretaker():
+        return indexer.run(get_vault(), _make_extractor(), force=force)
 
 
 @mcp.tool()
@@ -396,6 +427,11 @@ def consolidate_graph(apply: bool = False) -> dict:
     """Find duplicate graph entities (name variants of the same thing) via an
     LLM pass. Dry-run by default — returns proposed merges for review; call
     again with apply=True to merge them into canonical entities."""
+    if apply:
+        _refuse_tool_apply("consolidate_graph(apply=True)",
+                           "python -m tesseract_mcp.consolidate <vault> --apply")
+        with _caretaker():
+            return consolidate_mod.run(get_vault(), _make_consolidator(), apply=True)
     return consolidate_mod.run(get_vault(), _make_consolidator(), apply=apply)
 
 

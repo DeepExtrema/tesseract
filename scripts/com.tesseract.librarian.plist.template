@@ -6,7 +6,8 @@
        cp this-file ~/Library/LaunchAgents/com.tesseract.librarian.plist
        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tesseract.librarian.plist
      First run the librarian by hand in dry-run mode (README: Scheduled
-     maintenance) and review the report.
+     maintenance), review the report, then run it once by hand with
+     --confirm-first-run; a scheduled run on a never-swept vault refuses.
      Remove with: launchctl bootout gui/$(id -u)/com.tesseract.librarian -->
 <plist version="1.0">
 <dict>
@@ -20,6 +21,8 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>TESSERACT_EXTRACTOR</key><string>claude</string>
+    <!-- unattended extraction reads clipped web content: run the CLI with no tools -->
+    <key>TESSERACT_EXTRACTOR_NO_TOOLS</key><string>1</string>
     <key>PATH</key><string>{HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>StartCalendarInterval</key>

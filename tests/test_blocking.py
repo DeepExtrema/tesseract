@@ -211,3 +211,9 @@ def test_prune_entity_vectors_noop_when_all_live(tmp_path):
     blocking.compute_entity_vectors(_ents(), tmp_path, FakeEmbedder())
     live = {e["path"] for e in _ents()}
     assert blocking.prune_entity_vectors(tmp_path, live) == 0
+
+
+def test_compute_entity_vectors_persist_false_writes_no_cache(tmp_path):
+    got = blocking.compute_entity_vectors(_ents(), tmp_path, FakeEmbedder(),
+                                          persist=False)
+    assert got and not (tmp_path / blocking.ENTITY_VECTOR_FILE).exists()

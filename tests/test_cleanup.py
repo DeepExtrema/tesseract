@@ -310,3 +310,34 @@ def test_prune_checked_hash_drops_vanished_paths():
 
 def test_prune_checked_hash_handles_empty_block():
     assert cleanup.prune_checked_hash({}, {"anything"}) == 0
+
+
+def test_retract_refuses_suspected_mass_deletion(vault, vault_dir):
+    """A partly-present vault (unsynced, iCloud-evicted) reads as a mass
+    deletion; retraction must hold instead of stripping the graph."""
+    manifest = indexer.load_manifest(vault.root)
+    for i in range(cleanup.MASS_DELETION_MIN_NOTES):
+        manifest["hashes"][f"Gone/Note {i}.md"] = "digest"
+    indexer.save_manifest(manifest, vault.root)
+    result = cleanup.retract_deleted(vault)
+    assert result["suspect_mass_deletion"] is True
+    assert result["retracted_notes"] == 0
+    assert len(indexer.load_manifest(vault.root)["hashes"]) >= cleanup.MASS_DELETION_MIN_NOTES
+    forced = cleanup.retract_deleted(vault, force=True)
+    assert forced["retracted_notes"] == cleanup.MASS_DELETION_MIN_NOTES
+
+
+def test_dry_repair_counts_without_writing(vault, vault_dir):
+    store = GraphStore(vault)
+    store.upsert_entity(_ent("Src"))
+    store.upsert_entity(_ent("Canonical"))
+    _stub(vault, "Organizations", "Mid", "Claude/Graph/Organizations/Canonical")
+    _stub(vault, "Organizations", "Old", "Claude/Graph/Organizations/Mid")
+    store.add_relation("Claude/Graph/Organizations/Src.md", "uses",
+                       "Claude/Graph/Organizations/Ghost.md")
+    graph = vault_dir / "Claude" / "Graph"
+    before = {p: p.read_bytes() for p in graph.rglob("*.md")}
+    assert cleanup.repair_relations(vault, dry=True) == {"fixed": 0, "removed": 1}
+    assert cleanup.flatten_stubs(vault, NOW, dry=True) == {
+        "flattened": 1, "retired_stubs": 0}
+    assert {p: p.read_bytes() for p in graph.rglob("*.md")} == before

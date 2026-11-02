@@ -327,6 +327,34 @@ def test_dry_run_touches_nothing(vault, vault_dir):
     assert librarian.load_state(vault) == state_before
 
 
+def _files(root):
+    from pathlib import Path
+    root = Path(root)
+    return {p: p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+def test_dry_run_from_cold_caches_writes_nothing(vault, vault_dir):
+    """First-ever run on a vault: no sweep, no vector caches. The dry-run
+    must still embed (to vote and to cluster) but never persist a cache —
+    the spec's dry-run 'touches nothing on disk', state dir included."""
+    import os
+    from pathlib import Path
+
+    _entity_note(vault_dir, "Organizations", "Acme", "organization")
+    _entity_note(vault_dir, "Organizations", "Acme Corp", "organization")
+    state_dir = Path(os.environ["TESSERACT_STATE_DIR"])
+    vault_before, state_before = _files(vault_dir), _files(state_dir)
+    assert not (state_dir / blocking.ENTITY_VECTOR_FILE).exists()
+
+    fake = FakeConsolidator()
+    result = librarian.run_sweep(vault, extractor=FakeExtractor(),
+                                 consolidator=fake, embedder=FakeEmbedder(),
+                                 apply=False, now=NOW)
+    assert result["steps"]["consolidate"]["ran"]  # it really did the work
+    assert _files(vault_dir) == vault_before
+    assert _files(state_dir) == state_before
+
+
 def test_consecutive_apply_sweeps_keep_zero_pending(vault):
     """Each sweep appends to Librarian.md; the scan exclusion keeps the log
     from ever counting as pending index work."""
@@ -571,7 +599,8 @@ def test_sweep_cleanup_retracts_deleted_note_and_proposes_orphan(vault, vault_di
     cache.rebuild(vault, indexer.db_path(vault.root))
     result = librarian.run_sweep(vault, extractor=FakeExtractor(),
                                  consolidator=FakeConsolidator(),
-                                 embedder=FakeEmbedder(), now=NOW)
+                                 embedder=FakeEmbedder(), now=NOW,
+                                 auto_cleanup=True)
     step = result["steps"]["cleanup"]
     assert step["retracted_notes"] == 1 and step["removed_mentions"] == 1
     text = (vault_dir / "Claude" / "Graph" / "Organizations"
@@ -628,3 +657,92 @@ def test_health_counts_pending_retirements(vault):
     state = {"cleanup": {"pending_retirements": [{"path": "x"}]}}
     health = librarian.run_health(vault, state, None, None, {})
     assert health["pending_retirements"] == 1
+
+
+def _doomed_setup(vault, vault_dir):
+    _entity_note(vault_dir, "Organizations", "Acme", "organization",
+                 mentions=["Projects/Doomed"])
+    manifest = indexer.load_manifest(vault.root)
+    manifest["hashes"]["Projects/Doomed.md"] = "digest"
+    indexer.save_manifest(manifest, vault.root)
+    cache.rebuild(vault, indexer.db_path(vault.root))
+
+
+def test_cleanup_repairs_are_report_only_by_default(vault, vault_dir, monkeypatch):
+    """Original Librarian plan: health findings are report-only. Without the
+    opt-in, an apply sweep counts the repairs and changes no entity note."""
+    monkeypatch.delenv("TESSERACT_AUTO_CLEANUP", raising=False)
+    _doomed_setup(vault, vault_dir)
+    acme = vault_dir / "Claude" / "Graph" / "Organizations" / "Acme.md"
+    before = acme.read_bytes()
+    result = librarian.run_sweep(vault, extractor=FakeExtractor(),
+                                 consolidator=FakeConsolidator(),
+                                 embedder=FakeEmbedder(), now=NOW)
+    step = result["steps"]["cleanup"]
+    assert step["auto_repair"] is False
+    assert step["retracted_notes"] == 0
+    assert step["pending_repairs"]["deleted_notes"] == 1
+    assert acme.read_bytes() == before
+    assert "Projects/Doomed.md" in indexer.load_manifest(vault.root)["hashes"]
+    report = (vault_dir / "Claude" / "Librarian.md").read_text(encoding="utf-8")
+    assert "cleanup: report-only" in report and "--apply-repairs" in report
+
+
+def test_cleanup_auto_repair_env_opt_in(vault, vault_dir, monkeypatch):
+    monkeypatch.setenv("TESSERACT_AUTO_CLEANUP", "1")
+    _doomed_setup(vault, vault_dir)
+    result = librarian.run_sweep(vault, extractor=FakeExtractor(),
+                                 consolidator=FakeConsolidator(),
+                                 embedder=FakeEmbedder(), now=NOW)
+    assert result["steps"]["cleanup"]["retracted_notes"] == 1
+
+
+def test_cli_auto_cleanup_flag_passes_through(vault_dir, monkeypatch):
+    seen = {}
+
+    def fake_sweep(vault, apply, max_moves, auto_cleanup):
+        seen["auto_cleanup"] = auto_cleanup
+        return {"steps": {}, "health": {}, "errors": {}, "applied": apply}
+
+    monkeypatch.setattr(librarian, "run_sweep", fake_sweep)
+    monkeypatch.setattr(sys, "argv", ["librarian", str(vault_dir), "--dry-run",
+                                      "--auto-cleanup"])
+    monkeypatch.setattr(librarian, "format_report", lambda r, now: "")
+    librarian.main()
+    assert seen["auto_cleanup"] is True
+
+
+def test_cli_first_apply_sweep_needs_confirmation(vault_dir, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["librarian", str(vault_dir)])
+    with pytest.raises(SystemExit) as exc:
+        librarian.main()
+    assert exc.value.code == 2  # argparse error: nothing ran
+    assert not (vault_dir / "Claude" / "Librarian.md").exists()
+
+
+def test_cli_first_apply_sweep_runs_when_confirmed(vault_dir, monkeypatch):
+    seen = {}
+
+    def fake_sweep(vault, apply, max_moves, auto_cleanup):
+        seen["apply"] = apply
+        return {"steps": {}, "health": {}, "errors": {}, "applied": apply}
+
+    monkeypatch.setattr(librarian, "run_sweep", fake_sweep)
+    monkeypatch.setattr(sys, "argv", ["librarian", str(vault_dir),
+                                      "--confirm-first-run"])
+    librarian.main()
+    assert seen["apply"] is True
+
+
+def test_cli_later_apply_sweeps_need_no_flag(vault, vault_dir, monkeypatch):
+    librarian.save_state(vault, librarian.load_state(vault))  # a sweep has run
+    seen = {}
+
+    def fake_sweep(vault, apply, max_moves, auto_cleanup):
+        seen["apply"] = apply
+        return {"steps": {}, "health": {}, "errors": {}, "applied": apply}
+
+    monkeypatch.setattr(librarian, "run_sweep", fake_sweep)
+    monkeypatch.setattr(sys, "argv", ["librarian", str(vault_dir)])
+    librarian.main()
+    assert seen["apply"] is True
