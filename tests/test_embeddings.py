@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -93,8 +94,12 @@ def test_load_vector_cache_memo_tracks_disk_changes(tmp_path):
     assert load_vector_cache(p) == {"a": {"hash": "h1", "vec": [1.0]}}
     # a repeat load returns the memoized parse (same content)
     assert load_vector_cache(p)["a"]["hash"] == "h1"
-    # an out-of-process rewrite (new stamp) must be picked up
+    # an out-of-process rewrite (new stamp) must be picked up. The rewrite is
+    # the same size, and on Windows it can land in the same mtime tick as the
+    # save above, so move mtime forward to give it the new stamp the memo keys on.
+    before = p.stat()
     p.write_text('{"a": {"hash": "h2", "vec": [2.0]}}', encoding="utf-8")
+    os.utime(p, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000_000))
     assert load_vector_cache(p)["a"]["hash"] == "h2"
 
 
