@@ -8,6 +8,7 @@ Idempotent: never overwrites anything that already exists.
 from __future__ import annotations
 
 from pathlib import Path
+import os
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CONSTITUTION = REPO_ROOT / "vault" / "constitution.md"
@@ -23,7 +24,7 @@ DECISIONS_SEED = (
 )
 
 
-def install(vault_root: Path) -> list[str]:
+def install(vault_root: Path, owner: str | None = None) -> list[str]:
     """Create missing pieces of the Claude/ tree. Returns what was created."""
     vault_root = Path(vault_root)
     claude = vault_root / "Claude"
@@ -57,7 +58,13 @@ def install(vault_root: Path) -> list[str]:
         decisions.write_text(DECISIONS_SEED, encoding="utf-8")
         created.append("Claude/Decisions.md")
 
-    guide_text = ROOT_GUIDE.read_text(encoding="utf-8")
+    # Personalize new guides only. The fallback retains the existing generic
+    # ownership wording, and pre-existing user guides are never overwritten.
+    owner_name = owner if owner is not None else os.environ.get("TESSERACT_OWNER", "")
+    owner_name = owner_name.strip().replace("\r", " ").replace("\n", " ")
+    guide_text = ROOT_GUIDE.read_text(encoding="utf-8").replace(
+        "{OWNER}", owner_name or "the vault owner"
+    )
     for name in ("CLAUDE.md", "AGENTS.md"):
         guide = vault_root / name
         if not guide.exists():

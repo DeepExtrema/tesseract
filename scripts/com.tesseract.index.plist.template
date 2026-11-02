@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Nightly incremental graph index only (no organizer / no file moves).
+     Replace {REPO}, {VAULT}, {HOME}; then:
+       cp this-file ~/Library/LaunchAgents/com.tesseract.index.plist
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tesseract.index.plist
+     Remove with: launchctl bootout gui/$(id -u)/com.tesseract.index -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.tesseract.index</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>{REPO}/scripts/index-nightly.sh</string>
+    <string>{VAULT}</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>{HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>30</integer></dict>
+  <key>StandardOutPath</key><string>{HOME}/.tesseract-mcp/index-nightly.log</string>
+  <key>StandardErrorPath</key><string>{HOME}/.tesseract-mcp/index-nightly.log</string>
+</dict>
+</plist>

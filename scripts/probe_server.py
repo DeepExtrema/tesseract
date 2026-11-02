@@ -20,7 +20,9 @@ from collections import deque
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_EXE = str(REPO_ROOT / ".venv" / "Scripts" / "tesseract-mcp.exe")
+_BIN = "Scripts" if sys.platform == "win32" else "bin"
+_EXE = "tesseract-mcp.exe" if sys.platform == "win32" else "tesseract-mcp"
+DEFAULT_EXE = str(REPO_ROOT / ".venv" / _BIN / _EXE)
 DEFAULT_VAULT = r"C:\Vaults\Tesseract"
 
 # Sentinel distinguishing "stream hit EOF" (child closed stdout, almost

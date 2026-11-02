@@ -170,3 +170,14 @@ def test_main_silent_when_log_session_was_called(stop_nudge, monkeypatch, capsys
     monkeypatch.setattr("sys.stdin", __import__("io").StringIO(payload))
     stop_nudge.main()
     assert capsys.readouterr().out == ""
+
+
+def test_main_warns_on_stderr_when_vault_missing(session_start, monkeypatch, capsys, tmp_path):
+    missing = tmp_path / "no-such-vault"
+    monkeypatch.setenv("TESSERACT_VAULT_PATH", str(missing))
+    monkeypatch.setattr("sys.stdin", __import__("io").StringIO(
+        json.dumps({"cwd": str(tmp_path / "tesseract-mcp")})))
+    session_start.main()  # must not raise
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert "vault not found" in out.err
