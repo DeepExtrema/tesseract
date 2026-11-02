@@ -23,7 +23,7 @@ source of truth.
 - **Hybrid retrieval.** BM25 and embedding similarity fused with Reciprocal Rank Fusion.
 - **A knowledge graph you can open.** Entities extracted by an LLM are written as real markdown notes under `Claude/Graph/`.
 - **A write contract enforced in code.** Agents write freely under `Claude/`; everything else needs explicit confirmation.
-- **Self-maintaining.** One scheduled Librarian sweep indexes, files, repairs and reports.
+- **Self-maintaining.** One scheduled Librarian sweep indexes, files and reports what needs repair.
 - **Rebuildable state.** Every cache lives under `~/.tesseract-mcp/` and can be deleted and rebuilt from the vault.
 
 ## Contents
@@ -123,7 +123,7 @@ queries the tokenizer can't match, such as single characters or punctuation.
 flowchart LR
     I[index<br/>drain changed notes] --> O[organize<br/>file new notes]
     O --> C[cache<br/>rebuild graph.db if needed]
-    C --> CL[cleanup<br/>retract, repair, prune]
+    C --> CL[cleanup<br/>report repairs, prune caches]
     CL --> CO[consolidate<br/>throttled, proposals only]
     CO --> H[health checks]
     H --> RP[report<br/>Claude/Librarian.md]
@@ -141,7 +141,7 @@ The CLI exits non-zero when any step failed, so a scheduler can alert on it.
 | **Write contract** | `vault.py` contains every path to the vault and quarantines writes to `Claude/`. Writing elsewhere requires `confirm_outside_claude=True`. The human-readable rules ship as a constitution note. |
 | **Structured sheets** | A human folder becomes agent-writable only when it holds a `_schema.md`. `sheet_upsert` validates every field against that schema. |
 | **Organizer** | Files new notes by embedding neighbor vote. A share of ≥ 0.7 moves the note; below that, an unfiled note becomes a proposal for a human and an already-filed note stays put. Every move is journaled and reversible with `undo_move`. |
-| **Graph cleanup** | Retracts mentions of deleted notes, repairs dangling relations and merge-stub chains, and prunes caches. The Librarian only proposes entity retirements; `cleanup --apply-retirements` applies them. |
+| **Graph cleanup** | Finds mentions of deleted notes, dangling relations and merge-stub chains, and prunes derived caches. The sweep reports the repairs; `cleanup --apply-repairs` applies them (or opt in with `--auto-cleanup`). Retraction holds when so many notes are missing that the vault looks only partly present. The Librarian only proposes entity retirements; `cleanup --apply-retirements` applies them. |
 | **Consolidation** | Finds duplicate entities with an LLM pass. Dry-run by default; the Librarian only ever proposes merges. |
 | **Recall harness** | Claude Code skills that turn the vault into memory you can question. See [Skills](#skills). |
 | **Provisioning** | One command installs a pinned set of 14 Obsidian plugins, seeds settings, and installs the `Claude/` conventions tree. Every plugin asset is checked against a reviewed SHA-256 lock before anything is written ([bumping a pin](docs/PLUGIN_LOCK.md)). `--check` reports drift. |
@@ -302,7 +302,7 @@ These run outside the MCP server and are never exposed as tools.
 | `python -m tesseract_mcp.librarian <vault> [--dry-run]` | The scheduled caretaker sweep |
 | `python -m tesseract_mcp.indexer <vault> [--rebuild-only]` | Index directly, or rebuild `graph.db` from the markdown |
 | `python -m tesseract_mcp.organize <vault> [--dry-run]` | Run only the filing sweep |
-| `python -m tesseract_mcp.cleanup <vault> [--apply-retirements]` | Report deleted notes and orphaned entities; retire the orphans on request |
+| `python -m tesseract_mcp.cleanup <vault> [--apply-repairs [--force]] [--apply-retirements]` | Report deleted notes and orphaned entities; apply the mechanical repairs or retire the orphans on request |
 | `python -m tesseract_mcp.consolidate <vault> [--apply]` | Propose duplicate-entity merges; apply them on request |
 | `python -m tesseract_mcp.sheets <vault> --check` | Validate every sheet row against its schema |
 | `python -m tesseract_mcp.provision <vault> [--check]` | Provision or check a vault |
@@ -391,6 +391,7 @@ extraction on, because unattended sweeps read clipped web content.
 
 | Knob | Effect |
 |---|---|
+| `librarian --auto-cleanup` or `TESSERACT_AUTO_CLEANUP=1` | The sweep applies the mechanical graph repairs itself instead of reporting them |
 | `librarian --max-moves N` | Caps organizer moves per sweep; confident moves past the cap are skipped and re-evaluated next sweep (`0` = file nothing) |
 | `TESSERACT_READONLY=1` | MCP server registers only read tools; `log_session`, `capture`, `upsert_concept`, `write_note`, `add_task`, `sheet_upsert`, `index_brain`, `consolidate_graph`, `organize_vault`, `undo_move` are absent |
 | `TESSERACT_EXTRACTOR_NO_TOOLS=1` | Extractor CLI runs with no tools (`claude --tools "" --strict-mcp-config`, `codex exec --sandbox read-only`), so instructions inside note text cannot act during extraction. The shipped schedules (`librarian-task.cmd`, both launchd templates via `index-nightly.sh` or the plist) set it; MCP `index_brain` calls still follow your environment |

@@ -2,9 +2,12 @@
 
 Make graph state converge to the facts that still exist: retract mentions of
 deleted notes, propose retirement of unsupported entities, repair dangling
-relations and merge-stub chains, prune consolidation caches. Mechanical
-repairs auto-apply from the librarian sweep; retiring an entity note is
-propose-only, applied via this module's CLI. See
+relations and merge-stub chains, prune consolidation caches. The librarian
+sweep only reports pending repairs unless auto-repair is opted in
+(`librarian --auto-cleanup` / TESSERACT_AUTO_CLEANUP=1): the original
+Librarian plan made health findings report-only. `--apply-repairs` here
+applies them by hand. Retiring an entity note is always propose-only,
+applied via `--apply-retirements`. See
 docs/superpowers/specs/2026-07-13-graph-deletion-cleanup-design.md.
 """
 
@@ -34,6 +37,11 @@ from .vault import Vault, VaultError
 MAX_RETRACTIONS_PER_SWEEP = 100
 MAX_RELATION_FIXES_PER_SWEEP = 200
 MAX_PENDING_RETIREMENTS = 200
+# A vault that is only partly present (unsynced device, iCloud-evicted
+# files, a privacy prompt the scheduler never answered) reads as a mass
+# deletion. Above this share of tracked notes, retraction refuses to run.
+MASS_DELETION_MIN_NOTES = 20
+MASS_DELETION_MAX_FRACTION = 0.10
 
 
 def deleted_notes(vault: Vault) -> list[str]:
@@ -63,10 +71,27 @@ def _mentioning_entities(vault: Vault, note_rel: str) -> list[str]:
     )
 
 
-def retract_deleted(vault: Vault, limit: int = MAX_RETRACTIONS_PER_SWEEP) -> dict:
+def suspect_mass_deletion(vault: Vault, deleted: list[str] | None = None) -> bool:
+    """True when so many tracked notes are missing that the vault is more
+    likely partly absent than really pruned."""
+    if deleted is None:
+        deleted = deleted_notes(vault)
+    manifest = indexer.load_manifest(vault.root)
+    tracked = len(set(manifest["hashes"]) | set(manifest["failures"]))
+    return (len(deleted) >= MASS_DELETION_MIN_NOTES
+            and len(deleted) > MASS_DELETION_MAX_FRACTION * tracked)
+
+
+def retract_deleted(
+    vault: Vault, limit: int = MAX_RETRACTIONS_PER_SWEEP, force: bool = False
+) -> dict:
     """Retract mentions of deleted-but-tracked notes and prune their manifest
-    entries, bounded per sweep."""
+    entries, bounded per sweep. Refuses (changes nothing) on a suspected
+    mass deletion unless force=True."""
     deleted = deleted_notes(vault)
+    if not force and suspect_mass_deletion(vault, deleted):
+        return {"retracted_notes": 0, "removed_mentions": 0,
+                "remaining": len(deleted), "suspect_mass_deletion": True}
     todo = deleted[:limit]
     store = GraphStore(vault)
     removed = 0
@@ -119,10 +144,11 @@ def _target_status(vault: Vault, path: str) -> tuple[str, str | None]:
 
 
 def repair_relations(
-    vault: Vault, limit: int = MAX_RELATION_FIXES_PER_SWEEP
+    vault: Vault, limit: int = MAX_RELATION_FIXES_PER_SWEEP, dry: bool = False
 ) -> dict:
     """Rewrite relation lines whose target is a merge stub to the final
-    canonical; drop lines whose target is retired or missing. Bounded."""
+    canonical; drop lines whose target is retired or missing. Bounded.
+    dry=True counts the repairs without writing."""
     graph_dir = vault.resolve(GRAPH_ROOT)
     fixed = removed = 0
     if not graph_dir.is_dir():
@@ -163,15 +189,15 @@ def repair_relations(
                     fixed += 1
             else:
                 removed += 1
-        if changed:
+        if changed and not dry:
             rel = "/".join(p.relative_to(vault.root).parts)
             vault.write(rel, "".join(out), overwrite=True)
     return {"fixed": fixed, "removed": removed}
 
 
-def flatten_stubs(vault: Vault, now: datetime) -> dict:
+def flatten_stubs(vault: Vault, now: datetime, dry: bool = False) -> dict:
     """Point stub chains at the final canonical; retire dead-end stubs
-    (target missing, retired, or a cycle)."""
+    (target missing, retired, or a cycle). dry=True counts only."""
     graph_dir = vault.resolve(GRAPH_ROOT)
     flattened = retired = 0
     if not graph_dir.is_dir():
@@ -187,6 +213,12 @@ def flatten_stubs(vault: Vault, now: datetime) -> dict:
             continue
         rel = "/".join(p.relative_to(vault.root).parts)
         final = resolve_redirect(vault, target)
+        if dry:
+            if final:
+                flattened += 1
+            else:
+                retired += 1
+            continue
         if final:
             meta["merged_into"] = final
             stem = final.rsplit("/", 1)[-1]
@@ -283,6 +315,20 @@ def prune_checked_hash(con: dict, live_paths: set[str]) -> int:
     return len(stale)
 
 
+def apply_repairs(vault: Vault, now: datetime | None = None,
+                  force: bool = False) -> dict:
+    """The mechanical repairs, applied by hand: retract mentions of deleted
+    notes, fix dangling relations, flatten stub chains."""
+    now = now or datetime.now()
+    ret = retract_deleted(vault, force=force)
+    rel = repair_relations(vault)
+    stubs = flatten_stubs(vault, now)
+    if (ret["removed_mentions"] or ret["retracted_notes"] or rel["fixed"]
+            or rel["removed"] or stubs["flattened"] or stubs["retired_stubs"]):
+        cache.rebuild(vault, indexer.db_path(vault.root))
+    return {"retract": ret, "relations": rel, "stubs": stubs}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Graph deletion & orphaned-entity cleanup.")
@@ -292,8 +338,17 @@ def main() -> None:
                              "(default: report only)")
     parser.add_argument("--paths", nargs="*", default=None,
                         help="restrict retirement to these entity paths")
+    parser.add_argument("--apply-repairs", action="store_true",
+                        help="retract mentions of deleted notes, fix dangling "
+                             "relations and stub chains (default: report only)")
+    parser.add_argument("--force", action="store_true",
+                        help="with --apply-repairs: retract even when the "
+                             "missing-note count looks like a mass deletion")
     args = parser.parse_args()
     vault = Vault(args.vault)
+    if args.apply_repairs:
+        print(json.dumps(apply_repairs(vault, force=args.force), indent=2))
+        return
     if args.apply_retirements:
         print(json.dumps(apply_retirements(vault, paths=args.paths), indent=2))
         return

@@ -30,6 +30,8 @@ TS_FMT = "%Y-%m-%d %H:%M:%S"
 STATE_FILE = "librarian_state.json"
 BACKSTOP_MIN_INTERVAL_DAYS = 14
 LIBRARIAN_NOTE = "Claude/Librarian.md"
+AUTO_CLEANUP_ENV = "TESSERACT_AUTO_CLEANUP"
+_TRUTHY = {"1", "true", "yes", "on"}
 REPORT_MAX_SWEEPS = 30
 _NOTE_SEED = ("# Librarian\n\nCaretaker sweep reports (newest last). "
               "See constitution.\n")
@@ -262,24 +264,55 @@ def _consolidate_step(
             "skipped_batches": skipped}
 
 
-def _cleanup_step(vault: Vault, state: dict, now: datetime, apply: bool) -> dict:
-    """Mechanical graph hygiene (auto-applied) + retirement proposals
-    (propose-only; applied via the cleanup CLI). Runs before consolidate so
-    the slice never spends budget on entities this sweep just unsupported."""
+def auto_cleanup_enabled() -> bool:
+    return os.environ.get(AUTO_CLEANUP_ENV, "").strip().lower() in _TRUTHY
+
+
+def _pending_repairs(vault: Vault, now: datetime) -> dict:
+    """What the mechanical repairs WOULD change, counted without writing."""
+    deleted = cleanup_mod.deleted_notes(vault)
+    rel = cleanup_mod.repair_relations(vault, dry=True)
+    stubs = cleanup_mod.flatten_stubs(vault, now, dry=True)
+    return {"deleted_notes": len(deleted),
+            "dangling_relations": rel["fixed"] + rel["removed"],
+            "stub_chains": stubs["flattened"] + stubs["retired_stubs"],
+            "suspect_mass_deletion":
+                cleanup_mod.suspect_mass_deletion(vault, deleted)}
+
+
+def _cleanup_step(vault: Vault, state: dict, now: datetime, apply: bool,
+                  auto_repair: bool = False) -> dict:
+    """Graph hygiene. Mechanical repairs (retract mentions of deleted notes,
+    fix dangling relations, flatten stub chains) are REPORT-ONLY by default,
+    per the original Librarian plan (health findings are report-only);
+    auto_repair opts back into applying them. Retirements are always
+    propose-only. Derived caches (entity vectors, checked_hash) are pruned
+    on every apply sweep. Runs before consolidate so the slice never spends
+    budget on entities this sweep just unsupported."""
     if not apply:
-        return {"applied": False,
+        return {"applied": False, "auto_repair": auto_repair,
                 "deleted_pending": len(cleanup_mod.deleted_notes(vault)),
                 "orphans": len(cleanup_mod.find_orphans(vault)),
                 "retracted_notes": 0, "removed_mentions": 0,
                 "fixed_relations": 0, "removed_relations": 0,
                 "flattened_stubs": 0, "retired_stubs": 0,
-                "pruned_cache_keys": 0, "pending_retirements": 0}
-    ret = cleanup_mod.retract_deleted(vault)
-    rel = cleanup_mod.repair_relations(vault)
-    stubs = cleanup_mod.flatten_stubs(vault, now)
-    if (ret["removed_mentions"] or rel["fixed"] or rel["removed"]
-            or stubs["flattened"] or stubs["retired_stubs"]):
-        cache.rebuild(vault, indexer.db_path(vault.root))
+                "pruned_cache_keys": 0, "pending_retirements": 0,
+                "pending_repairs": _pending_repairs(vault, now)}
+    if auto_repair:
+        ret = cleanup_mod.retract_deleted(vault)
+        rel = cleanup_mod.repair_relations(vault)
+        stubs = cleanup_mod.flatten_stubs(vault, now)
+        if (ret["removed_mentions"] or rel["fixed"] or rel["removed"]
+                or stubs["flattened"] or stubs["retired_stubs"]):
+            cache.rebuild(vault, indexer.db_path(vault.root))
+        pending_repairs = None
+    else:
+        ret = {"retracted_notes": 0, "removed_mentions": 0,
+               "remaining": len(cleanup_mod.deleted_notes(vault)),
+               "suspect_mass_deletion": False}
+        rel = {"fixed": 0, "removed": 0}
+        stubs = {"flattened": 0, "retired_stubs": 0}
+        pending_repairs = _pending_repairs(vault, now)
     orphans = cleanup_mod.find_orphans(vault)
     block = state.get("cleanup") or {}
     pending = cleanup_mod.update_retirement_proposals(block, orphans)
@@ -289,7 +322,10 @@ def _cleanup_step(vault: Vault, state: dict, now: datetime, apply: bool) -> dict
     pruned = blocking.prune_entity_vectors(indexer.state_dir(vault.root), live)
     pruned += cleanup_mod.prune_checked_hash(
         state.get("consolidation") or {}, live)
-    return {"applied": True,
+    if pending_repairs is None and ret.get("suspect_mass_deletion"):
+        pending_repairs = _pending_repairs(vault, now)
+    return {"applied": True, "auto_repair": auto_repair,
+            "pending_repairs": pending_repairs,
             "deleted_pending": ret["remaining"], "orphans": len(orphans),
             "retracted_notes": ret["retracted_notes"],
             "removed_mentions": ret["removed_mentions"],
@@ -331,6 +367,8 @@ def _summarize_steps(steps: dict) -> dict:
         "retired_stubs": cl["retired_stubs"],
         "pruned_cache_keys": cl["pruned_cache_keys"],
         "pending_retirements": cl["pending_retirements"],
+        "auto_repair": cl.get("auto_repair", False),
+        "pending_repairs": cl.get("pending_repairs"),
     }
     con = steps.get("consolidate")
     out["consolidate"] = con if con is None else {
@@ -376,11 +414,22 @@ def format_report(result: dict, now: datetime) -> str:
     elif not cl["applied"]:
         lines.append(f"- cleanup: {cl['deleted_pending']} deleted notes "
                      f"pending, {cl['orphans']} orphans (dry-run)\n")
+    elif not cl.get("auto_repair"):
+        pr = cl.get("pending_repairs") or {}
+        lines.append(f"- cleanup: report-only — {pr.get('deleted_notes', 0)} "
+                     f"deleted notes, {pr.get('dangling_relations', 0)} "
+                     f"dangling relations, {pr.get('stub_chains', 0)} stub "
+                     f"chains await `cleanup --apply-repairs`; "
+                     f"{cl['pending_retirements']} retirement proposals\n")
     else:
         lines.append(f"- cleanup: retracted {cl['retracted_notes']} notes, "
                      f"fixed {cl['fixed_relations'] + cl['removed_relations']} "
                      f"relations, {cl['pending_retirements']} retirement "
                      f"proposals\n")
+
+    if cl and (cl.get("pending_repairs") or {}).get("suspect_mass_deletion"):
+        lines.append("- cleanup: ⚠ so many tracked notes are missing that the "
+                     "vault may be only partly present; retraction held\n")
 
     con = steps.get("consolidate")
     if con is None:
@@ -449,8 +498,12 @@ def run_sweep(
     apply: bool = True,
     max_moves: int | None = None,
     now: datetime | None = None,
+    auto_cleanup: bool | None = None,
 ) -> dict:
+    """auto_cleanup None = read TESSERACT_AUTO_CLEANUP (default off)."""
     now = now or datetime.now()
+    if auto_cleanup is None:
+        auto_cleanup = auto_cleanup_enabled()
     state = load_state(vault)
     result: dict = {"steps": {}, "health": {}, "errors": {}, "applied": apply}
 
@@ -470,7 +523,8 @@ def run_sweep(
     _step(result, "cache", lambda: _ensure_cache(vault, result))
 
     _step(result, "cleanup",
-          lambda: _cleanup_step(vault, state, now, apply))
+          lambda: _cleanup_step(vault, state, now, apply,
+                                auto_repair=auto_cleanup))
 
     _step(result, "consolidate",
           lambda: _consolidate_step(vault, state, consolidator, now, apply, embedder))
@@ -507,11 +561,15 @@ def main() -> None:
                         help="Report without writing anything")
     parser.add_argument("--max-moves", type=int, default=None, metavar="N",
                         help="Cap organizer moves per sweep (default: unlimited)")
+    parser.add_argument("--auto-cleanup", action="store_true",
+                        help="apply mechanical graph repairs during the sweep "
+                             "(default: report them; also TESSERACT_AUTO_CLEANUP=1)")
     args = parser.parse_args()
     if args.max_moves is not None and args.max_moves < 0:
         parser.error("--max-moves must be >= 0")
     result = run_sweep(Vault(args.vault), apply=not args.dry_run,
-                       max_moves=args.max_moves)
+                       max_moves=args.max_moves,
+                       auto_cleanup=True if args.auto_cleanup else None)
     if args.dry_run:
         print(format_report(result, datetime.now()))
     print(json.dumps(result, indent=2, default=str))
