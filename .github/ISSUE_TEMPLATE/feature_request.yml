@@ -1,0 +1,32 @@
+name: Feature request
+description: A new tool, caretaker behaviour, skill or integration
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today, or what do you have to do by hand?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Tool signature, CLI flag or skill behaviour. Say whether it reads or writes, and where.
+    validations:
+      required: true
+  - type: dropdown
+    id: writes
+    attributes:
+      label: Does it write to the vault?
+      options:
+        - No, read-only
+        - Yes, inside `Claude/`
+        - Yes, outside `Claude/` (needs a human interlock; explain which)
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

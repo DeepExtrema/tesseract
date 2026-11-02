@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Architecture deep dive
+    url: https://github.com/DeepExtrema/tesseract-mcp/blob/codex/architecture-roadmap/docs/ARCHITECTURE.md
+    about: Read this before proposing changes to retrieval, the graph, the write contract or the caretakers.
