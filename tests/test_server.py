@@ -346,3 +346,25 @@ def test_sheet_upsert_tool_schema_has_agent_param():
     tools = asyncio.run(server.mcp.list_tools())
     upsert_tool = next(t for t in tools if t.name == "sheet_upsert")
     assert "agent" in upsert_tool.inputSchema["properties"]
+
+
+@pytest.mark.parametrize("call", [
+    lambda: server.organize_vault(apply=True),
+    lambda: server.consolidate_graph(apply=True),
+    lambda: server.index_brain(force=True),
+])
+def test_no_tool_apply_refuses_caretaker_actions(call, monkeypatch):
+    monkeypatch.setenv("TESSERACT_NO_TOOL_APPLY", "1")
+    with pytest.raises(VaultError, match="TESSERACT_NO_TOOL_APPLY"):
+        call()
+
+
+def test_no_tool_apply_keeps_dry_runs(monkeypatch):
+    monkeypatch.setenv("TESSERACT_NO_TOOL_APPLY", "1")
+
+    class FakeBackend:
+        def complete_json(self, prompt):
+            return {"merges": []}
+
+    monkeypatch.setattr(server, "_make_consolidator", lambda: FakeBackend())
+    assert server.consolidate_graph()["applied"] is False
