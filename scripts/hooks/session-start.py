@@ -54,6 +54,13 @@ def main() -> None:
         if not project:
             return
         vault = os.environ.get("TESSERACT_VAULT_PATH", DEFAULT_VAULT)
+        if not os.path.isdir(vault):
+            # Stay non-blocking, but say why recall is empty (stderr is not
+            # injected into the session context).
+            sys.stderr.write(
+                f"tesseract session-start: vault not found at {vault!r}; "
+                "set TESSERACT_VAULT_PATH to enable recall.\n")
+            return
         result = subprocess.run(
             build_command(project, vault),
             capture_output=True, text=True, timeout=15,
