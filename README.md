@@ -315,7 +315,8 @@ These run outside the MCP server and are never exposed as tools.
 
 > **First Librarian run on a real vault: use `--dry-run`** and review the
 > report before scheduling unattended runs. Dry-run writes no state, moves,
-> report or throttle baselines. `scripts/librarian-task.cmd` is the Windows
+> report, throttle baselines or vector caches. It still calls the
+> consolidation model so the report can show merge proposals. `scripts/librarian-task.cmd` is the Windows
 > Task Scheduler entry point.
 
 On macOS, schedule with launchd instead. Each template says how to install

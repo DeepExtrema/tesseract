@@ -38,8 +38,10 @@ def _vector_path(state_root: Path) -> Path:
 
 
 def compute_entity_vectors(
-    entities: list[dict], state_root: Path, embedder: Embedder
+    entities: list[dict], state_root: Path, embedder: Embedder,
+    persist: bool = True,
 ) -> dict[str, list[float]]:
+    """persist=False (dry-runs) embeds in memory, never writes the cache."""
     cache = load_vector_cache(_vector_path(state_root))
     result: dict[str, list[float]] = {}
     to_embed: list[dict] = []
@@ -57,7 +59,8 @@ def compute_entity_vectors(
         for e, vec in zip(to_embed, vecs):
             result[e["path"]] = vec
             cache[e["path"]] = {"hash": hashes[e["path"]], "vec": vec}
-        save_vector_cache(_vector_path(state_root), cache)
+        if persist:
+            save_vector_cache(_vector_path(state_root), cache)
     return result
 
 

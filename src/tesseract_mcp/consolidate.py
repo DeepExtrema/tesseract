@@ -170,7 +170,8 @@ def run(vault: Vault, backend, apply: bool = False, embedder=None) -> dict:
     if embedder is None:
         embedder = embeddings_mod.SentenceTransformerEmbedder()
     state_root = state_dir(vault.root)
-    vectors = blocking.compute_entity_vectors(entities, state_root, embedder)
+    vectors = blocking.compute_entity_vectors(entities, state_root, embedder,
+                                              persist=apply)
     clusters = blocking.candidate_clusters(entities, entities, vectors)
     batches = blocking.batch_clusters(clusters)
     merges, skipped = adjudicate_batches(backend, batches, entities)

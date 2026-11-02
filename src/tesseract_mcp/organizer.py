@@ -207,7 +207,7 @@ def run_sweep(
     if embedder is None:
         embedder = embeddings_mod.SentenceTransformerEmbedder()
     vectors = embeddings_mod.get_note_vectors(
-        vault, indexer.state_dir(vault.root), embedder
+        vault, indexer.state_dir(vault.root), embedder, persist=apply
     )
     taxonomy = set(discover_taxonomy(vault))
     labeled = iter_organized(vault)

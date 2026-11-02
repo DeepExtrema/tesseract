@@ -327,6 +327,34 @@ def test_dry_run_touches_nothing(vault, vault_dir):
     assert librarian.load_state(vault) == state_before
 
 
+def _files(root):
+    from pathlib import Path
+    root = Path(root)
+    return {p: p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+def test_dry_run_from_cold_caches_writes_nothing(vault, vault_dir):
+    """First-ever run on a vault: no sweep, no vector caches. The dry-run
+    must still embed (to vote and to cluster) but never persist a cache —
+    the spec's dry-run 'touches nothing on disk', state dir included."""
+    import os
+    from pathlib import Path
+
+    _entity_note(vault_dir, "Organizations", "Acme", "organization")
+    _entity_note(vault_dir, "Organizations", "Acme Corp", "organization")
+    state_dir = Path(os.environ["TESSERACT_STATE_DIR"])
+    vault_before, state_before = _files(vault_dir), _files(state_dir)
+    assert not (state_dir / blocking.ENTITY_VECTOR_FILE).exists()
+
+    fake = FakeConsolidator()
+    result = librarian.run_sweep(vault, extractor=FakeExtractor(),
+                                 consolidator=fake, embedder=FakeEmbedder(),
+                                 apply=False, now=NOW)
+    assert result["steps"]["consolidate"]["ran"]  # it really did the work
+    assert _files(vault_dir) == vault_before
+    assert _files(state_dir) == state_before
+
+
 def test_consecutive_apply_sweeps_keep_zero_pending(vault):
     """Each sweep appends to Librarian.md; the scan exclusion keeps the log
     from ever counting as pending index work."""

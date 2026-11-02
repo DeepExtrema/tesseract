@@ -228,7 +228,8 @@ def _consolidate_step(
     cursor = con.get("cursor")
     backstop_due = _backstop_due(con, now)
     state_root = indexer.state_dir(vault.root)
-    vectors = blocking.compute_entity_vectors(entities, state_root, embedder)
+    vectors = blocking.compute_entity_vectors(entities, state_root, embedder,
+                                              persist=apply)
     slice_, new_cursor, used_backstop = blocking.select_slice(
         entities, checked_hash, cursor, blocking.SLICE_SIZE, backstop_due=backstop_due)
     if not slice_:

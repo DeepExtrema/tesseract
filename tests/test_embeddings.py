@@ -139,3 +139,12 @@ def test_save_vector_cache_failed_replace_keeps_old_file_and_no_temp(tmp_path, m
         emb.save_vector_cache(p, {"b": {"hash": "h2", "vec": [2.0]}})
     assert [f.name for f in tmp_path.iterdir()] == ["vecs.json"]
     assert emb.load_vector_cache(p) == {"a": {"hash": "h1", "vec": [1.0]}}
+
+
+def test_persist_false_embeds_without_writing_cache(vault, tmp_path):
+    from tesseract_mcp.embeddings import FALLBACK_CACHE_FILE
+
+    state = tmp_path / "state-dry"
+    state.mkdir()
+    got = get_note_vectors(vault, state, FakeEmbedder(), persist=False)
+    assert got and not (state / FALLBACK_CACHE_FILE).exists()
