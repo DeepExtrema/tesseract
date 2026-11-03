@@ -4,12 +4,37 @@ Agents contribute through separate server instances that share the vault, so
 the write path has to be safe without a coordinator: create-only writes are
 atomic, temp files never collide, and each agent's identity is recorded."""
 
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from tesseract_mcp import notes
+from tesseract_mcp import notes, sheets, tasks
 from tesseract_mcp.vault import NoteExists, VaultError
+
+THINGS_SCHEMA = (
+    "---\nsheet: things\nfilename: \"{name}\"\nkey: [name]\n"
+    "columns:\n  name: {type: string, required: true}\n"
+    "  status: {type: string}\n---\n"
+)
+
+
+@pytest.fixture
+def things(vault, vault_dir):
+    (vault_dir / "Things").mkdir()
+    (vault_dir / "Things" / "_schema.md").write_text(THINGS_SCHEMA, encoding="utf-8")
+    return vault
+
+
+def _race(n, fn):
+    barrier = threading.Barrier(n)
+
+    def run(i):
+        barrier.wait()
+        return fn(i)
+
+    with ThreadPoolExecutor(max_workers=n) as pool:
+        return list(pool.map(run, range(n)))
 
 
 def test_create_only_write_has_exactly_one_winner(vault):
@@ -73,3 +98,48 @@ def test_concurrent_concept_creation_merges_instead_of_losing(vault):
     assert len(rels) == 1
     text = vault.read(rels.pop())
     assert all(f"from {i}" in text for i in range(8))
+
+
+def test_concept_collision_extends_the_note_even_when_lookup_misses(vault, monkeypatch):
+    # e.g. NFC vs NFD names on macOS: the create collides but the casefold
+    # lookup cannot see the file. Extend it; never recurse or overwrite.
+    vault.write("Claude/Concepts/Idea.md", "# Idea\n\noriginal\n")
+    monkeypatch.setattr(notes, "_find_concept", lambda *a: None)
+    rel = notes.upsert_concept(vault, "Idea", "addition")
+    text = vault.read(rel)
+    assert rel == "Claude/Concepts/Idea.md"
+    assert "original" in text and "addition" in text
+
+
+def test_concurrent_first_tasks_keep_every_task(vault):
+    _race(8, lambda i: tasks.add_task(vault, f"task {i}"))
+    text = vault.read(tasks.TASKS_FILE)
+    assert text.startswith(tasks.TASKS_SEED)
+    assert all(f"- [ ] task {i}\n" in text for i in range(8))
+
+
+def test_sheet_rows_take_the_instance_identity(things, monkeypatch):
+    monkeypatch.setenv("TESSERACT_AGENT_NAME", "donna")
+    implicit = sheets.upsert(things, "things", {"name": "A"})
+    explicit = sheets.upsert(things, "things", {"name": "B"}, agent="cowork")
+    assert "agent: donna" in things.read(implicit["path"])
+    assert "agent: cowork" in things.read(explicit["path"])
+
+
+def test_concurrent_sheet_creates_of_one_row_become_updates(things):
+    results = _race(8, lambda i: sheets.upsert(
+        things, "things", {"name": "Same", "status": f"s{i}"})["result"])
+    assert results.count("created") == 1
+    assert results.count("updated") == 7
+    rows = [p.name for p in (things.root / "Things").glob("*.md")]
+    assert sorted(rows) == ["Same.md", "_schema.md"]
+
+
+def test_sheet_rows_sharing_a_filename_still_get_suffixed(things, monkeypatch):
+    # a different row whose filename is taken is not an update target
+    (things.root / "Things" / "Same.md").write_text(
+        "---\nname: Other\n---\n", encoding="utf-8")
+    monkeypatch.setattr(sheets, "render_filename", lambda schema, fields: "Same")
+    out = sheets.upsert(things, "things", {"name": "Mine"})
+    assert out == {**out, "result": "created", "path": "Things/Same 2.md"}
+    assert "name: Other" in things.read("Things/Same.md")

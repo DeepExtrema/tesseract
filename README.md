@@ -437,12 +437,18 @@ Any agent can contribute. Point each agent at the same vault with its own server
 instance and its own `TESSERACT_AGENT_NAME`; nothing needs a central coordinator.
 
 - **Additive tools are safe to run concurrently.** `capture` and `add_task` append;
-  `log_session`, `upsert_concept` and `write_note` create notes with an atomic
-  create-only write (a hard link, so exactly one writer wins). Two agents logging
-  the same title get distinct notes, and two agents creating the same concept end up
-  extending one note. Nothing is overwritten unless a caller passes `overwrite=True`.
-- **Every note says who wrote it.** `agent:` frontmatter and concept-update headings
-  carry the agent's name, so `query_notes` and Obsidian can filter by contributor.
+  `log_session`, `upsert_concept`, `write_note` and `sheet_upsert` create notes with
+  an atomic create-only write (a hard link, so exactly one writer wins). Two agents
+  logging the same title get distinct notes, two agents creating the same concept end
+  up extending one note, and two agents creating the same sheet row end up with one
+  row (the second lands as an update). Nothing is overwritten unless a caller passes
+  `overwrite=True`. On filesystems without hard links (FAT/exFAT, some network
+  mounts) an exclusive create keeps the one-winner rule, but a reader may briefly see
+  a note half-written.
+- **Every note an agent writes says who wrote it.** `agent:` frontmatter, sheet rows
+  and concept-update headings carry the agent's name, so `query_notes` and Obsidian
+  can filter by contributor. Caretaker output (graph entities, merge stubs, Librarian
+  notes, the `Tasks.md` seed) stays attributed to `claude`.
 - **Caretaker work stays serialized.** Indexing, organizing and consolidation still take
   the single caretaker lock, so autonomous agents cannot step on a sweep.
 - **The write contract still applies.** Agents write freely under `Claude/`; anything
