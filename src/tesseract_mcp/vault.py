@@ -8,6 +8,7 @@ Two rules are enforced in code, not by convention:
 
 from __future__ import annotations
 
+import errno
 import os
 import secrets
 import time
@@ -20,6 +21,57 @@ class VaultError(Exception):
 
 class NoteExists(VaultError):
     """A create-only write lost the race to (or collided with) an existing note."""
+
+
+class _NoHardLinks(Exception):
+    """The filesystem cannot hard-link; publish with an exclusive create."""
+
+
+def _exists_error(relative: str) -> NoteExists:
+    return NoteExists(
+        f"'{relative}' already exists. Pass overwrite=True to replace it."
+    )
+
+
+def _link(src: Path, dst: Path) -> None:
+    try:
+        os.link(src, dst)
+    except FileExistsError:
+        raise
+    except PermissionError as e:
+        # link(2) reports "filesystem has no hard links" (FAT/exFAT, some
+        # FUSE/SMB mounts) as EPERM; Windows locks surface as EACCES and are
+        # left for _retry_locked.
+        if e.errno == errno.EPERM:
+            raise _NoHardLinks from e
+        raise
+    except OSError as e:
+        raise _NoHardLinks from e
+
+
+def _discard(tmp: Path) -> None:
+    # The write's outcome is already decided; a locked temp file must not
+    # turn a published note (or a NoteExists) into a different error.
+    try:
+        _retry_locked(lambda: tmp.unlink(missing_ok=True))
+    except OSError:
+        pass
+
+
+def _create_exclusive(path: Path, relative: str, data: bytes) -> None:
+    # O_EXCL keeps exactly one winner where hard links are unavailable; the
+    # cost is that a reader may briefly see the note half-written.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    try:
+        fd = _retry_locked(lambda: os.open(path, flags, 0o666))
+    except FileExistsError:
+        raise _exists_error(relative) from None
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
 
 
 def _retry_locked(fn):
@@ -87,14 +139,13 @@ class Vault:
         if path.is_dir():
             raise VaultError(f"'{relative}' is a directory, not a note.")
         if path.exists() and not overwrite:
-            raise NoteExists(
-                f"'{relative}' already exists. Pass overwrite=True to replace it."
-            )
+            raise _exists_error(relative)
         path.parent.mkdir(parents=True, exist_ok=True)
-        # Unique temp name: several agents may write into the same folder at
-        # once, and a shared temp name would let one agent's bytes land in
-        # another agent's note.
-        tmp = path.with_name(f"{path.name}.{os.getpid()}-{secrets.token_hex(4)}.tmp-write")
+        # Short unique temp name in the target folder: concurrent writers
+        # must not share one, and suffixing the note's own name would push
+        # long-but-valid names past the 255-byte component limit. The leading
+        # dot keeps Obsidian from indexing it.
+        tmp = path.with_name(f".{secrets.token_hex(8)}.tmp-write")
         # newline="\n": Path.write_text's default newline translation
         # rewrites every LF in `content` as the platform line ending, so on
         # Windows the first patch of a pre-existing LF file silently
@@ -109,22 +160,13 @@ class Vault:
                 # would then silently clobber whichever landed first. A hard
                 # link fails if the target exists, so exactly one writer wins.
                 try:
-                    _retry_locked(lambda: os.link(tmp, path))
+                    _retry_locked(lambda: _link(tmp, path))
                 except FileExistsError:
-                    raise NoteExists(
-                        f"'{relative}' already exists. Pass overwrite=True to replace it."
-                    ) from None
-                except PermissionError:
-                    raise  # a persistent lock is an error, not "no hard links"
-                except OSError:
-                    # Filesystem without hard links: best effort, never lose data.
-                    if path.exists():
-                        raise NoteExists(
-                            f"'{relative}' already exists. Pass overwrite=True to replace it."
-                        ) from None
-                    _retry_locked(lambda: os.replace(tmp, path))
+                    raise _exists_error(relative) from None
+                except _NoHardLinks:
+                    _create_exclusive(path, relative, content.encode("utf-8"))
         finally:
-            tmp.unlink(missing_ok=True)
+            _discard(tmp)
         return path
 
     def append(
