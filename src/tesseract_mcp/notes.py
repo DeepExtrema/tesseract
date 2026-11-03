@@ -114,8 +114,9 @@ def upsert_concept(
             return rel
         except NoteExists:
             # Another agent created the concept between our lookup and our
-            # write: extend theirs rather than fail or overwrite it.
-            return upsert_concept(vault, name, content, now)
+            # write: extend theirs rather than fail or overwrite it. The
+            # collided path exists even when the lookup still misses it.
+            existing = _find_concept(vault, filename) or rel
     by = agent_name()
     heading = f"## Update {now:%Y-%m-%d}" + (f" ({by})" if by != AGENT_NAME else "")
     vault.append(existing, f"\n{heading}\n\n{content}\n")

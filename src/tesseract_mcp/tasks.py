@@ -6,7 +6,7 @@ import re
 from datetime import datetime
 
 from .search import iter_note_files
-from .vault import Vault
+from .vault import NoteExists, Vault
 
 TASKS_FILE = "Claude/Tasks.md"
 TASKS_SEED = (
@@ -21,7 +21,10 @@ _TASK_LINE = re.compile(r"^\s*[-*] \[(?P<state>[ xX])\] (?P<text>.+)$")
 def add_task(vault: Vault, content: str, due: str | None = None) -> str:
     """Append a Tasks-plugin-format checkbox to Claude/Tasks.md."""
     if not vault.resolve(TASKS_FILE).exists():
-        vault.write(TASKS_FILE, TASKS_SEED)
+        try:
+            vault.write(TASKS_FILE, TASKS_SEED)
+        except NoteExists:
+            pass  # another agent seeded it first; the seed is published whole
     line = f"- [ ] {' '.join(content.split())}"
     if due:
         datetime.strptime(due, "%Y-%m-%d")  # validate; raises ValueError if bad
