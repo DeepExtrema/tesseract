@@ -74,9 +74,12 @@ def test_list_recent_orders_newest_first(vault):
 
     vault.write("Claude/Inbox/old.md", "old")
     vault.write("Claude/Inbox/new.md", "new")
+    # time.time() can lag filesystem write stamps (coarse Windows tick), so
+    # fixture files written just now may carry an mtime above it; keep "new"
+    # well clear of them.
     now = time.time()
     os.utime(vault.resolve("Claude/Inbox/old.md"), (now - 1000, now - 1000))
-    os.utime(vault.resolve("Claude/Inbox/new.md"), (now, now))
+    os.utime(vault.resolve("Claude/Inbox/new.md"), (now + 1000, now + 1000))
     got = graph.list_recent(vault, n=2)
     assert got[0]["path"] == "Claude/Inbox/new.md"
     assert len(got) == 2 and all("modified" in r for r in got)
