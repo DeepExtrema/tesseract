@@ -199,14 +199,15 @@ def recall_bundle(
 
 @_write_tool
 def sheet_upsert(
-    sheet: str, fields: dict, body: str | None = None, agent: str = "claude"
+    sheet: str, fields: dict, body: str | None = None, agent: str | None = None
 ) -> dict:
     """Create or update one row in a registered sheet (a human-blessed folder
     with _schema.md). Validates every field against the schema; finds the
     existing row by key + posting identity; patches only the passed fields.
     `agent` names the calling agent (e.g. "cowork") and is stamped on the
-    row's `agent` field and any '## Log' status line. Returns
-    created|updated, the path, and a changed map."""
+    row's `agent` field and any '## Log' status line; it defaults to this
+    server's TESSERACT_AGENT_NAME. Returns created|updated, the path, and a
+    changed map."""
     return sheets_mod.upsert(get_vault(), sheet, fields, body=body, agent=agent)
 
 

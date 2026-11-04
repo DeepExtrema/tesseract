@@ -426,9 +426,33 @@ extraction on, because unattended sweeps read clipped web content.
 |---|---|
 | `librarian --auto-cleanup` or `TESSERACT_AUTO_CLEANUP=1` | The sweep applies the mechanical graph repairs itself instead of reporting them |
 | `librarian --max-moves N` | Caps organizer moves per sweep; confident moves past the cap are skipped and re-evaluated next sweep (`0` = file nothing) |
+| `TESSERACT_AGENT_NAME=<name>` | Identity stamped on notes this server instance creates (`agent:` frontmatter, concept update headings). Default `claude`. Run one instance per agent so every contribution is attributable |
 | `TESSERACT_READONLY=1` | MCP server registers only read tools; `log_session`, `capture`, `upsert_concept`, `write_note`, `add_task`, `sheet_upsert`, `index_brain`, `consolidate_graph`, `organize_vault`, `undo_move` are absent |
 | `TESSERACT_NO_TOOL_APPLY=1` | Keeps the note-writing tools but refuses `organize_vault(apply=True)`, `consolidate_graph(apply=True)` and `index_brain(force=True)`, so only the scheduled sweep or a human at the CLI can move notes, merge entities or re-extract the whole vault |
 | `TESSERACT_EXTRACTOR_NO_TOOLS=1` | Extractor CLI runs with no tools (`claude --tools "" --strict-mcp-config`, `codex exec --sandbox read-only`), so instructions inside note text cannot act during extraction. The shipped schedules (`librarian-task.cmd`, both launchd templates via `index-nightly.sh` or the plist) set it; MCP `index_brain` calls still follow your environment |
+
+## Many agents, one vault
+
+Any agent can contribute. Point each agent at the same vault with its own server
+instance and its own `TESSERACT_AGENT_NAME`; nothing needs a central coordinator.
+
+- **Additive tools are safe to run concurrently.** `capture` and `add_task` append;
+  `log_session`, `upsert_concept`, `write_note` and `sheet_upsert` create notes with
+  an atomic create-only write (a hard link, so exactly one writer wins). Two agents
+  logging the same title get distinct notes, two agents creating the same concept end
+  up extending one note, and two agents creating the same sheet row end up with one
+  row (the second lands as an update). Nothing is overwritten unless a caller passes
+  `overwrite=True`. On filesystems without hard links (FAT/exFAT, some network
+  mounts) an exclusive create keeps the one-winner rule, but a reader may briefly see
+  a note half-written.
+- **Every note an agent writes says who wrote it.** `agent:` frontmatter, sheet rows
+  and concept-update headings carry the agent's name, so `query_notes` and Obsidian
+  can filter by contributor. Caretaker output (graph entities, merge stubs, Librarian
+  notes, the `Tasks.md` seed) stays attributed to `claude`.
+- **Caretaker work stays serialized.** Indexing, organizing and consolidation still take
+  the single caretaker lock, so autonomous agents cannot step on a sweep.
+- **The write contract still applies.** Agents write freely under `Claude/`; anything
+  else still needs `confirm_outside_claude=True`.
 
 ## Going deeper
 

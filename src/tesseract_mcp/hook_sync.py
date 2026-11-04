@@ -21,7 +21,7 @@ import json
 import os
 from pathlib import Path
 
-from . import platform_paths
+from . import platforms
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOKS_DIR = REPO_ROOT / "scripts" / "hooks"
@@ -42,7 +42,7 @@ def default_settings_path() -> Path:
 
 def venv_python(repo_root: Path = REPO_ROOT) -> Path:
     """The repo's own virtualenv interpreter (Scripts/ on Windows, bin/ elsewhere)."""
-    return platform_paths.venv_python(repo_root)
+    return platforms.venv_python(repo_root)
 
 
 def expected_command(event: str, repo_root: Path = REPO_ROOT) -> str:

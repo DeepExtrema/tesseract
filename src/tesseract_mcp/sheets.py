@@ -18,8 +18,9 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import yaml
 
+from .notes import agent_name
 from .search import SKIP_DIRS, parse_frontmatter
-from .vault import Vault
+from .vault import NoteExists, Vault, _retry_locked
 
 SCHEMA_FILE = "_schema.md"
 STANDARD_COLUMNS = {"created", "agent", "project", "tags"}
@@ -245,8 +246,11 @@ def iter_rows(vault: Vault, schema: Schema) -> list[tuple[str, dict]]:
         if path.name == SCHEMA_FILE or not path.is_file():
             continue
         rel = f"{schema.folder}/{path.name}"
-        rows.append((rel, parse_frontmatter(
-            path.read_text(encoding="utf-8", errors="ignore"))))
+        # another agent may be replacing this row right now (a brief
+        # PermissionError on Windows); ride it out like Vault.read does
+        text = _retry_locked(
+            lambda: path.read_text(encoding="utf-8", errors="ignore"))
+        rows.append((rel, parse_frontmatter(text)))
     return rows
 
 
@@ -398,34 +402,55 @@ def _normalize_value(value):
     return value
 
 
-def upsert(vault: Vault, sheet: str, fields: dict, body: str | None = None,
-           agent: str = "claude", now: datetime | None = None) -> dict:
-    now = now or datetime.now()
-    schema = get_schema(vault, sheet)
-    rel, backfill = match_row(vault, schema, dict(fields))
-    merged = {**fields, **backfill}
-    if rel is None:
-        validate_fields(schema, merged, require_required=True)
-        stem = render_filename(schema, merged)
-        candidate, n = stem, 2
-        while vault.resolve(f"{schema.folder}/{candidate}.md").exists():
+def _create_row(vault: Vault, schema: Schema, merged: dict, body: str | None,
+                agent: str, now: datetime, *, suffixed: bool) -> dict:
+    validate_fields(schema, merged, require_required=True)
+    meta = {**merged,
+            "created": f"{now:%Y-%m-%d %H:%M}", "agent": agent}
+    # Single serialization convention shared with the patch path
+    # (_yaml_line): unquoted YYYY-MM-DD dates, so create and patch never
+    # disagree on how a date round-trips through yaml.safe_load.
+    fm = "".join(_yaml_line(k, v) + "\n" for k, v in meta.items())
+    changed = {k: {"from": None, "to": v} for k, v in merged.items()}
+    text_body = body if body is not None else ""
+    log = _log_line(changed, agent, now)
+    if log:
+        text_body = _append_log(text_body, log)
+    stem = render_filename(schema, merged)
+    candidate, n = stem, 2
+    while True:
+        rel = f"{schema.folder}/{candidate}.md"
+        try:
+            vault.write(rel, f"---\n{fm}---\n\n{text_body}",
+                        confirm_outside_claude=True)
+            return {"result": "created", "path": rel, "changed": changed}
+        except NoteExists:
+            if not suffixed:
+                raise
             candidate = f"{stem} {n}"
             n += 1
-        rel = f"{schema.folder}/{candidate}.md"
-        meta = {**merged,
-                "created": f"{now:%Y-%m-%d %H:%M}", "agent": agent}
-        # Single serialization convention shared with the patch path
-        # (_yaml_line): unquoted YYYY-MM-DD dates, so create and patch never
-        # disagree on how a date round-trips through yaml.safe_load.
-        fm = "".join(_yaml_line(k, v) + "\n" for k, v in meta.items())
-        changed = {k: {"from": None, "to": v} for k, v in merged.items()}
-        text_body = body if body is not None else ""
-        log = _log_line(changed, agent, now)
-        if log:
-            text_body = _append_log(text_body, log)
-        vault.write(rel, f"---\n{fm}---\n\n{text_body}",
-                    confirm_outside_claude=True)
-        return {"result": "created", "path": rel, "changed": changed}
+
+
+def upsert(vault: Vault, sheet: str, fields: dict, body: str | None = None,
+           agent: str | None = None, now: datetime | None = None) -> dict:
+    now = now or datetime.now()
+    agent = agent or agent_name()
+    schema = get_schema(vault, sheet)
+    rel, backfill = match_row(vault, schema, dict(fields))
+    if rel is None:
+        try:
+            return _create_row(vault, schema, {**fields, **backfill}, body,
+                               agent, now, suffixed=False)
+        except NoteExists:
+            # The row's filename was claimed after match_row ran: usually
+            # another agent creating this same row. Re-match so ours lands as
+            # an update instead of a duplicate; a different row that merely
+            # shares the filename gets a numeric suffix.
+            rel, backfill = match_row(vault, schema, dict(fields))
+            if rel is None:
+                return _create_row(vault, schema, {**fields, **backfill}, body,
+                                   agent, now, suffixed=True)
+    merged = {**fields, **backfill}
 
     if body is not None:
         raise SheetError(

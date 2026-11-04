@@ -10,13 +10,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import platform_paths
+from . import platforms
 
 
 class MissingVaultError(RuntimeError):
@@ -62,7 +61,7 @@ def load_manifest(path: Path) -> list[ServerSpec]:
 def _sub(text: str, repo_root: Path, vault: str | None) -> str:
     out = text.replace(
         "{TESSERACT_BIN}",
-        str(platform_paths.venv_script(repo_root, "tesseract-mcp")),
+        str(platforms.venv_script(repo_root, "tesseract-mcp")),
     )
     out = out.replace("{REPO}", str(repo_root))
     if "{VAULT}" in out:
@@ -157,9 +156,7 @@ def build_add_command(spec: ServerSpec) -> list[str]:
 def _format_command(argv: list[str]) -> str:
     """Human-pasteable command text for the operator's shell: PowerShell/cmd
     quoting on Windows, POSIX quoting elsewhere."""
-    if os.name == "nt":
-        return subprocess.list2cmdline(argv)
-    return shlex.join(argv)
+    return platforms.current.quote_command(argv)
 
 
 def _remediation(name: str) -> str:
