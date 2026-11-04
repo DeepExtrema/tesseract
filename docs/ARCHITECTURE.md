@@ -313,6 +313,7 @@ for how to stand it up.
 | `notes.py` | Structured note operations for the `Claude/` subtree (sessions, inbox captures, concepts). |
 | `organize.py` | CLI entry point for the autonomous filing sweep (`python -m tesseract_mcp.organize`). |
 | `organizer.py` | Autonomous vault organizer: files notes where their semantic neighbors live, via cosine-weighted K-nearest-neighbor folder vote. |
+| `platforms/` | Every OS-specific behaviour behind one contract: `posix.py` (Linux, macOS) and `windows.py` provide venv layout, shell quoting, the caretaker file lock and hard-link error rules; `platforms.current` is the running OS's backend. Nothing else branches on `os.name`. |
 | `provision.py` | Provisions a fresh Obsidian vault as a Tesseract mind database (plugins, settings, conventions). |
 | `sc_adapter.py` | Reads Smart Connections' local embeddings directly from disk. |
 | `search.py` | Shared note-parsing and vault-scanning helpers: frontmatter parsing, the canonical note walk, and the candidate filtering used by hybrid search. |

@@ -8,11 +8,12 @@ Two rules are enforced in code, not by convention:
 
 from __future__ import annotations
 
-import errno
 import os
 import secrets
 import time
 from pathlib import Path
+
+from . import platforms
 
 
 class VaultError(Exception):
@@ -38,15 +39,13 @@ def _link(src: Path, dst: Path) -> None:
         os.link(src, dst)
     except FileExistsError:
         raise
-    except PermissionError as e:
-        # link(2) reports "filesystem has no hard links" (FAT/exFAT, some
-        # FUSE/SMB mounts) as EPERM; Windows locks surface as EACCES and are
-        # left for _retry_locked.
-        if e.errno == errno.EPERM:
+    except OSError as e:
+        # Which errors mean "this filesystem has no hard links" differs per
+        # OS (see platforms/); anything else, e.g. a Windows lock, is raised
+        # for _retry_locked to handle.
+        if platforms.current.hardlinks_unsupported(e):
             raise _NoHardLinks from e
         raise
-    except OSError as e:
-        raise _NoHardLinks from e
 
 
 def _discard(tmp: Path) -> None:
@@ -61,7 +60,7 @@ def _discard(tmp: Path) -> None:
 def _create_exclusive(path: Path, relative: str, data: bytes) -> None:
     # O_EXCL keeps exactly one winner where hard links are unavailable; the
     # cost is that a reader may briefly see the note half-written.
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | platforms.current.O_BINARY
     try:
         fd = _retry_locked(lambda: os.open(path, flags, 0o666))
     except FileExistsError:
