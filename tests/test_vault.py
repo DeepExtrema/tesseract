@@ -186,20 +186,22 @@ def test_write_gives_up_after_persistent_lock(vault, monkeypatch):
 
 
 def test_create_only_without_hard_links_still_has_one_winner(vault, monkeypatch):
-    # link(2) answers EPERM on FAT/exFAT and some FUSE/SMB mounts; that is
-    # "no hard links", not a lock, so it must fall back at once rather than
-    # retry and fail — and the fallback must not let a racer clobber the note.
+    # On a filesystem without hard links (FAT/exFAT, some network mounts) the
+    # write must fall back at once rather than retry and fail, and the
+    # fallback must not let a racer clobber the note. ENOTSUP is "no hard
+    # links" to every backend; each OS's own signal (Linux EPERM, Windows
+    # ERROR_INVALID_FUNCTION) is covered in test_platforms.py.
     import errno
     from concurrent.futures import ThreadPoolExecutor
     from tesseract_mcp import vault as vault_mod
     from tesseract_mcp.vault import NoteExists
 
     def no_links(src, dst):
-        raise PermissionError(errno.EPERM, "Operation not permitted")
+        raise OSError(errno.ENOTSUP, "Operation not supported")
 
     monkeypatch.setattr(vault_mod.os, "link", no_links)
     monkeypatch.setattr(vault_mod.time, "sleep",
-                        lambda s: pytest.fail("EPERM must not be retried"))
+                        lambda s: pytest.fail("no-hard-links must not be retried"))
 
     def attempt(i):
         try:
@@ -243,78 +245,52 @@ def test_locked_temp_cleanup_does_not_fail_a_published_write(vault, monkeypatch)
     assert vault.read("Claude/Inbox/cleanup.md") == "content"
 
 
-def test_append_retries_transient_windows_lock(vault, vault_dir, monkeypatch):
-    # append hits the same Windows lock window as write: the open("a")
-    # itself raises PermissionError while Obsidian/LiveSync hold the file.
+def test_append_retries_transient_windows_lock(vault, monkeypatch):
+    # append hits the same Windows lock window as write: opening the note
+    # raises PermissionError while Obsidian/LiveSync hold it.
+    from tesseract_mcp import platforms
     from tesseract_mcp import vault as vault_mod
-    target = vault_dir / "Claude" / "Inbox" / "lock-append.md"
-    real_open = type(target).open
+    real_open = platforms.current.open_append
     calls = {"n": 0}
 
-    def flaky(self, *args, **kwargs):
-        if self == target:
-            calls["n"] += 1
-            if calls["n"] <= 2:
-                raise PermissionError(5, "Access is denied")
-        return real_open(self, *args, **kwargs)
+    def flaky(path):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise PermissionError(5, "Access is denied")
+        return real_open(path)
 
-    monkeypatch.setattr(type(target), "open", flaky)
+    monkeypatch.setattr(platforms.current, "open_append", flaky)
     monkeypatch.setattr(vault_mod.time, "sleep", lambda s: None)
     vault.append("Claude/Inbox/lock-append.md", "- captured\n")
     assert calls["n"] == 3
     assert vault.read("Claude/Inbox/lock-append.md") == "- captured\n"
 
 
-def test_append_gives_up_after_persistent_lock(vault, vault_dir, monkeypatch):
-    import pytest as _pytest
+def test_append_gives_up_after_persistent_lock(vault, monkeypatch):
+    from tesseract_mcp import platforms
     from tesseract_mcp import vault as vault_mod
-    target = vault_dir / "Claude" / "Inbox" / "lock-append2.md"
-    real_open = type(target).open
 
-    def always_locked(self, *args, **kwargs):
-        if self == target:
-            raise PermissionError(5, "Access is denied")
-        return real_open(self, *args, **kwargs)
+    def always_locked(path):
+        raise PermissionError(5, "Access is denied")
 
-    monkeypatch.setattr(type(target), "open", always_locked)
+    monkeypatch.setattr(platforms.current, "open_append", always_locked)
     monkeypatch.setattr(vault_mod.time, "sleep", lambda s: None)
-    with _pytest.raises(PermissionError):
+    with pytest.raises(PermissionError):
         vault.append("Claude/Inbox/lock-append2.md", "- captured\n")
 
 
 def test_append_does_not_retry_after_write_started(vault, vault_dir, monkeypatch):
     # a failure mid-write must surface, not re-open and append the content
     # a second time on top of what already landed
-    import pytest as _pytest
     from tesseract_mcp import vault as vault_mod
     target = vault_dir / "Claude" / "Inbox" / "partial-append.md"
-    real_open = type(target).open
 
-    class PartialWrite:
-        def __init__(self, f):
-            self._f = f
+    def partial(fd, data):
+        os.write(fd, data[: len(data) // 2])
+        raise PermissionError(5, "Access is denied")
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            self._f.close()
-
-        def close(self):
-            self._f.close()
-
-        def write(self, s):
-            self._f.write(s[: len(s) // 2])
-            self._f.flush()
-            raise PermissionError(5, "Access is denied")
-
-    def opener(self, *args, **kwargs):
-        f = real_open(self, *args, **kwargs)
-        return PartialWrite(f) if self == target else f
-
-    monkeypatch.setattr(type(target), "open", opener)
+    monkeypatch.setattr(vault_mod, "_write_all", partial)
     monkeypatch.setattr(vault_mod.time, "sleep", lambda s: None)
-    with _pytest.raises(PermissionError):
+    with pytest.raises(PermissionError):
         vault.append("Claude/Inbox/partial-append.md", "- captured\n")
-    monkeypatch.undo()
     assert target.read_text(encoding="utf-8") == "- cap"

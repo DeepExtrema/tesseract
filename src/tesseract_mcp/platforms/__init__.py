@@ -24,6 +24,8 @@ from . import posix, windows
 #   NAME                       backend id, for messages and tests
 #   VENV_BIN_DIR, EXE_SUFFIX   virtualenv console-script layout
 #   O_BINARY                   extra os.open flag so bytes are not translated
+#   open_append(path)          fd whose writes always land at end of file,
+#                              atomically with respect to other appenders
 #   quote_command(argv)        argv as text the OS's usual shell accepts
 #   try_lock(f), unlock(f)     non-blocking exclusive lock on an open file
 #   hardlinks_unsupported(e)   does this os.link error mean "no hard links
@@ -33,6 +35,7 @@ CONTRACT = (
     "VENV_BIN_DIR",
     "EXE_SUFFIX",
     "O_BINARY",
+    "open_append",
     "quote_command",
     "try_lock",
     "unlock",

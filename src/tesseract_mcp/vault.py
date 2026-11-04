@@ -57,6 +57,13 @@ def _discard(tmp: Path) -> None:
         pass
 
 
+def _write_all(fd: int, data: bytes) -> None:
+    # os.write may write less than asked (signals, pipes); loop until done.
+    view = memoryview(data)
+    while view:
+        view = view[os.write(fd, view):]
+
+
 def _create_exclusive(path: Path, relative: str, data: bytes) -> None:
     # O_EXCL keeps exactly one winner where hard links are unavailable; the
     # cost is that a reader may briefly see the note half-written.
@@ -182,7 +189,11 @@ class Vault:
         path.parent.mkdir(parents=True, exist_ok=True)
         # retry only the open: Windows locks surface there, and re-running a
         # write that failed midway would append the content twice
-        f = _retry_locked(lambda: path.open("a", encoding="utf-8", newline="\n"))
-        with f:
-            f.write(content)
+        fd = _retry_locked(lambda: platforms.current.open_append(path))
+        try:
+            # Encode once and write raw bytes: LF on every OS, and one write
+            # per append so concurrent agents' lines never interleave.
+            _write_all(fd, content.encode("utf-8"))
+        finally:
+            os.close(fd)
         return path

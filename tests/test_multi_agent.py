@@ -111,6 +111,20 @@ def test_concept_collision_extends_the_note_even_when_lookup_misses(vault, monke
     assert "original" in text and "addition" in text
 
 
+def test_concurrent_appends_keep_every_line(vault):
+    # capture/add_task/concept updates append. Windows' emulated "a" mode
+    # (seek to end, then write) let racing agents overwrite each other's
+    # lines; every backend's open_append must make appends atomic.
+    def agent(i):
+        for j in range(25):
+            vault.append("Claude/Inbox/shared.md", f"- agent {i} line {j}\n")
+
+    _race(16, agent)
+    lines = vault.read("Claude/Inbox/shared.md").splitlines()
+    assert sorted(lines) == sorted(
+        f"- agent {i} line {j}" for i in range(16) for j in range(25))
+
+
 def test_concurrent_first_tasks_keep_every_task(vault):
     _race(8, lambda i: tasks.add_task(vault, f"task {i}"))
     text = vault.read(tasks.TASKS_FILE)

@@ -11,6 +11,7 @@ imported, and its pure logic tested, on any OS.
 from __future__ import annotations
 
 import errno
+import os
 import shlex
 
 NAME = "posix"
@@ -21,6 +22,14 @@ O_BINARY = 0  # POSIX never translates bytes
 
 def quote_command(argv: list[str]) -> str:
     return shlex.join(argv)
+
+
+def open_append(path) -> int:
+    """A write-only fd whose every write lands at end of file.
+
+    With O_APPEND the kernel moves to EOF and writes in one step, so
+    concurrent appenders (other agents' servers) never overwrite each other."""
+    return os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o666)
 
 
 def try_lock(f) -> None:
