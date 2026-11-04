@@ -123,7 +123,9 @@ class Vault:
             raise VaultError(f"'{relative}' is a directory, not a note.")
         if not path.is_file():
             raise VaultError(f"Note not found: {relative}")
-        return path.read_text(encoding="utf-8")
+        # Windows: opening a note while another agent's os.replace swaps it
+        # (or Obsidian/LiveSync holds it) fails briefly with PermissionError.
+        return _retry_locked(lambda: path.read_text(encoding="utf-8"))
 
     def _check_write_allowed(self, relative: str, confirm_outside_claude: bool) -> None:
         if not self.in_claude(relative) and not confirm_outside_claude:

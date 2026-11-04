@@ -104,6 +104,29 @@ def test_read_directory_raises_vault_error(vault):
         vault.read("Claude/Sessions")
 
 
+def test_read_retries_transient_windows_lock(vault, monkeypatch):
+    # Windows: reading a note while another agent's os.replace swaps it
+    # fails briefly with PermissionError; a sheet upsert racing another
+    # agent's update hit exactly this on the Windows CI runner.
+    from pathlib import Path
+    from tesseract_mcp import vault as vault_mod
+    vault.write("Claude/Inbox/busy.md", "content")
+    real_read = Path.read_text
+    calls = {"n": 0}
+
+    def flaky(self, *args, **kwargs):
+        if self.name == "busy.md":
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise PermissionError(13, "Permission denied")
+        return real_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", flaky)
+    monkeypatch.setattr(vault_mod.time, "sleep", lambda s: None)
+    assert vault.read("Claude/Inbox/busy.md") == "content"
+    assert calls["n"] == 3
+
+
 def test_write_is_atomic_no_tmp_left_behind(vault):
     vault.write("Claude/Inbox/atomic.md", "v1")
     vault.write("Claude/Inbox/atomic.md", "v2", overwrite=True)

@@ -20,7 +20,7 @@ import yaml
 
 from .notes import agent_name
 from .search import SKIP_DIRS, parse_frontmatter
-from .vault import NoteExists, Vault
+from .vault import NoteExists, Vault, _retry_locked
 
 SCHEMA_FILE = "_schema.md"
 STANDARD_COLUMNS = {"created", "agent", "project", "tags"}
@@ -246,8 +246,11 @@ def iter_rows(vault: Vault, schema: Schema) -> list[tuple[str, dict]]:
         if path.name == SCHEMA_FILE or not path.is_file():
             continue
         rel = f"{schema.folder}/{path.name}"
-        rows.append((rel, parse_frontmatter(
-            path.read_text(encoding="utf-8", errors="ignore"))))
+        # another agent may be replacing this row right now (a brief
+        # PermissionError on Windows); ride it out like Vault.read does
+        text = _retry_locked(
+            lambda: path.read_text(encoding="utf-8", errors="ignore"))
+        rows.append((rel, parse_frontmatter(text)))
     return rows
 
 
